@@ -84,6 +84,8 @@
     <label>كود الجهاز (يظهر على التلفزيون في شاشة "أدخل البيانات من هاتفك")</label>
     <input id="code" maxlength="9" placeholder="XXXX-XXXX">
 
+    <div class="hint">جهاز جديد؟ اكتب كوده واسم صاحبه واضغط إرسال — يتفعّل فوراً (السيرفر اختياري).</div>
+
     <label>اسم صاحب الجهاز (يظهر في إعدادات التلفزيون)</label>
     <input id="owner" placeholder="مثلاً: أبو أحمد - بيروت">
 
@@ -110,6 +112,12 @@
     <button class="main" id="sendBtn">إرسال إلى التلفزيون</button>
     <div id="sendMsg" class="msg"></div>
     <button class="link hidden" id="cancelBtn" style="margin-top:12px">إلغاء الإرسال</button>
+
+    <div class="section">
+      <h2>إيقاف جهاز</h2>
+      <div class="hint">يعيد الجهاز إلى شاشة "بانتظار التفعيل" (السيرفرات المحفوظة عليه تبقى). لإعادة تفعيله أرسل له أي شيء من جديد.</div>
+      <button class="add" id="blockBtn" style="color:var(--err);border-color:var(--err)">⛔ إيقاف هذا الجهاز</button>
+    </div>
   </div>
 </div>
 
@@ -165,12 +173,12 @@ let book = [];
 async function loadBook(selectCode) {
   try {
     const snap = await getDocs(collection(db, "devices"));
-    book = snap.docs.map(d => ({ code: d.id, name: d.data().name || "" }))
+    book = snap.docs.map(d => ({ code: d.id, name: d.data().name || "", stopped: !!d.data().stopped }))
                     .sort((a, b) => (a.name || a.code).localeCompare(b.name || b.code, "ar"));
   } catch (e) { book = []; }
   const sel = $("book");
   sel.innerHTML = '<option value="">— اختر جهازاً —</option>' +
-    book.map(d => `<option value="${d.code}">${(d.name || "بدون اسم").replace(/</g, "&lt;")}  ·  ${prettyCode(d.code)}</option>`).join("");
+    book.map(d => `<option value="${d.code}">${d.stopped ? "⛔ " : ""}${(d.name || "بدون اسم").replace(/</g, "&lt;")}  ·  ${prettyCode(d.code)}</option>`).join("");
   if (selectCode) sel.value = selectCode;
 }
 $("book").onchange = () => {
@@ -270,7 +278,7 @@ $("sendBtn").onclick = async () => {
 
   // حفظ الجهاز في الدفتر (الاسم الجديد إن وُجد، وإلا يبقى القديم).
   const known = book.find(d => d.code === code);
-  setDoc(doc(db, "devices", code), { name: name || known?.name || "", updatedAt: serverTimestamp() }, { merge: true })
+  setDoc(doc(db, "devices", code), { name: name || known?.name || "", stopped: false, updatedAt: serverTimestamp() }, { merge: true })
     .then(() => loadBook(code)).catch(() => {});
 
   currentCode = code;
@@ -288,6 +296,32 @@ $("sendBtn").onclick = async () => {
     }
   });
   $("sendBtn").disabled = false;
+};
+
+$("blockBtn").onclick = async () => {
+  const code = normCode($("code").value);
+  const msg = $("sendMsg");
+  if (!CODE_RE.test(code)) return show(msg, "err", "اكتب كود الجهاز الذي تريد إيقافه أولاً.");
+  const known = book.find(d => d.code === code);
+  if (!confirm(`إيقاف "${known?.name || prettyCode(code)}"؟ سيعود إلى شاشة "بانتظار التفعيل".`)) return;
+  try {
+    await setDoc(doc(db, "push", code), { deactivate: true, createdAt: serverTimestamp() });
+  } catch (e) {
+    return show(msg, "err", "تعذّر الإيقاف (" + (e.code || e.message) + "). تأكّد من قواعد Firestore.");
+  }
+  setDoc(doc(db, "devices", code), { name: known?.name || "", stopped: true, updatedAt: serverTimestamp() }, { merge: true })
+    .then(() => loadBook(code)).catch(() => {});
+  currentCode = code;
+  show(msg, "info", "أُرسل أمر الإيقاف ✓ — يُطبَّق عند فتح التطبيق أو الشاشة الرئيسية على ذلك الجهاز.");
+  $("cancelBtn").classList.remove("hidden");
+  if (unsub) unsub();
+  unsub = onSnapshot(doc(db, "push", code), snap => {
+    if (!snap.exists()) {
+      unsub(); unsub = null; currentCode = null;
+      show(msg, "ok", "تم إيقاف الجهاز ✓");
+      $("cancelBtn").classList.add("hidden");
+    }
+  });
 };
 
 $("cancelBtn").onclick = async () => {
