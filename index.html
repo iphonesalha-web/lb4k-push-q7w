@@ -12,35 +12,47 @@
 <title>إرسال سيرفر — LIBANON 4K</title>
 <style>
   :root { --bg:#0e0b1a; --card:#1a1530; --line:#2d2650; --text:#f1edfb; --muted:#a49cc0;
-          --accent:#B14BF4; --ok:#2BE886; --err:#ff6b6b; }
+          --accent:#B14BF4; --ok:#2BE886; --err:#ff6b6b; --warn:#ffc46b; }
   * { box-sizing:border-box; }
   body { margin:0; background:var(--bg); color:var(--text);
-         font-family:-apple-system,"Segoe UI",Tahoma,sans-serif; padding:max(24px, env(safe-area-inset-top)) 16px 24px; }
-  .box { max-width:520px; margin:0 auto; background:var(--card); border:1px solid var(--line);
-         border-radius:16px; padding:26px; }
+         font-family:-apple-system,"Segoe UI",Tahoma,sans-serif;
+         padding:max(20px, env(safe-area-inset-top)) 14px 28px; }
+  .box { max-width:540px; margin:0 auto; background:var(--card); border:1px solid var(--line);
+         border-radius:16px; padding:22px; }
   h1 { margin:0 0 4px; font-size:22px; }
-  .sub { color:var(--muted); font-size:14px; margin:0 0 22px; }
+  .sub { color:var(--muted); font-size:14px; margin:0 0 18px; }
   label { display:block; font-size:13px; color:var(--muted); margin:14px 0 6px; }
-  input { width:100%; background:#0e0b1a; color:var(--text); border:1px solid var(--line);
-          border-radius:10px; padding:12px 14px; font-size:16px; direction:ltr; text-align:left; }
-  input:focus { outline:none; border-color:var(--accent); }
-  #code { font-size:24px; letter-spacing:4px; text-transform:uppercase; text-align:center; font-weight:bold; }
-  .presets { display:flex; gap:8px; margin-top:8px; }
-  .chip { flex:1; background:transparent; color:var(--text); border:1px solid var(--line);
+  input, select { width:100%; background:#0e0b1a; color:var(--text); border:1px solid var(--line);
+          border-radius:10px; padding:12px 14px; font-size:16px; }
+  input.ltr { direction:ltr; text-align:left; }
+  input:focus, select:focus { outline:none; border-color:var(--accent); }
+  #code { font-size:24px; letter-spacing:4px; text-transform:uppercase; text-align:center; font-weight:bold; direction:ltr; }
+  .row2 { display:flex; gap:8px; }
+  .row2 > * { flex:1; }
+  .chip { background:transparent; color:var(--text); border:1px solid var(--line);
           border-radius:10px; padding:9px; cursor:pointer; font-size:14px; }
   .chip:hover { border-color:var(--accent); }
+  .chip.on { background:var(--accent); border-color:var(--accent); color:#fff; font-weight:bold; }
+  .section { margin-top:20px; padding-top:16px; border-top:1px solid var(--line); }
+  .section h2 { font-size:15px; margin:0; }
+  .server { border:1px solid var(--line); border-radius:12px; padding:12px; margin-top:12px; background:#151127; }
+  .server .head { display:flex; justify-content:space-between; align-items:center; font-size:13px; color:var(--muted); }
+  .server input { margin-top:8px; }
+  .x { background:none; border:0; color:var(--err); font-size:20px; cursor:pointer; line-height:1; }
+  .add { width:100%; margin-top:12px; background:transparent; color:var(--accent);
+         border:1px dashed var(--accent); border-radius:10px; padding:11px; font-size:15px; cursor:pointer; }
   button.main { width:100%; margin-top:22px; background:var(--accent); color:#fff; border:0;
                 border-radius:10px; padding:14px; font-size:17px; font-weight:bold; cursor:pointer; }
   button.main:disabled { opacity:.5; cursor:default; }
-  .link { background:none; border:0; color:var(--muted); cursor:pointer; font-size:13px;
-          margin-top:14px; text-decoration:underline; }
+  .link { background:none; border:0; color:var(--muted); cursor:pointer; font-size:13px; text-decoration:underline; }
   .msg { margin-top:16px; padding:12px 14px; border-radius:10px; font-size:15px; display:none; }
   .msg.info { display:block; background:#241d42; }
   .msg.ok   { display:block; background:#123528; color:var(--ok); }
   .msg.err  { display:block; background:#3a1820; color:var(--err); }
   .hint { color:var(--muted); font-size:12px; margin-top:6px; }
+  .warn { color:var(--warn); font-size:12px; margin-top:6px; display:none; }
   .hidden { display:none; }
-  .who { color:var(--muted); font-size:12px; display:flex; justify-content:space-between; margin-bottom:16px; }
+  .who { color:var(--muted); font-size:12px; display:flex; justify-content:space-between; margin-bottom:6px; }
 </style>
 </head>
 <body>
@@ -51,46 +63,74 @@
   <!-- تسجيل الدخول -->
   <div id="loginView" class="hidden">
     <label>البريد (حساب المدير في Firebase)</label>
-    <input id="email" type="email" autocomplete="username">
+    <input id="email" class="ltr" type="email" autocomplete="username">
     <label>كلمة السر</label>
-    <input id="pw" type="password" autocomplete="current-password">
+    <input id="pw" class="ltr" type="password" autocomplete="current-password">
     <button class="main" id="loginBtn">دخول</button>
     <div id="loginMsg" class="msg"></div>
   </div>
 
   <!-- الإرسال -->
   <div id="sendView" class="hidden">
-    <div class="who"><span id="whoami"></span><button class="link" id="logoutBtn" style="margin:0">خروج</button></div>
+    <div class="who"><span id="whoami"></span><button class="link" id="logoutBtn">خروج</button></div>
+
+    <!-- دفتر الأجهزة -->
+    <label>الأجهزة المحفوظة</label>
+    <div class="row2">
+      <select id="book"><option value="">— اختر جهازاً —</option></select>
+      <button class="chip" id="bookDel" style="flex:0 0 auto">حذف</button>
+    </div>
 
     <label>كود الجهاز (يظهر على التلفزيون في شاشة "أدخل البيانات من هاتفك")</label>
     <input id="code" maxlength="9" placeholder="XXXX-XXXX">
 
-    <label>رابط M3U كامل (اختياري — يملأ الخانات تلقائياً)</label>
-    <input id="m3u" placeholder="http://server:port/get.php?username=...&password=...">
+    <label>اسم صاحب الجهاز (يظهر في إعدادات التلفزيون)</label>
+    <input id="owner" placeholder="مثلاً: أبو أحمد - بيروت">
 
-    <label>السيرفر</label>
-    <input id="url" placeholder="http://server:port">
-    <div class="presets">
-      <button class="chip" data-url="http://libanon4k.eu">Neo</button>
-      <button class="chip" data-url="http://maripor.com">Dino</button>
+    <!-- السيرفرات -->
+    <div class="section">
+      <h2>السيرفرات</h2>
+      <label>الصق رابط M3U كاملاً (يُضاف كسيرفر تلقائياً)</label>
+      <input id="m3u" class="ltr" placeholder="http://server:port/get.php?username=...&password=...">
+      <div id="servers"></div>
+      <button class="add" id="addServer">+ سيرفر آخر</button>
+      <div class="hint">يمكن إرسال الاسم وحده بدون سيرفرات — يتغيّر الاسم فقط.</div>
     </div>
 
-    <label>اسم المستخدم</label>
-    <input id="user" autocomplete="off">
-    <label>كلمة السر</label>
-    <input id="pass" autocomplete="off">
+    <!-- الوضع -->
+    <div class="section">
+      <h2>ماذا يحدث بالسيرفرات القديمة على الجهاز؟</h2>
+      <div class="row2" style="margin-top:10px">
+        <button class="chip on" data-mode="add">أضف إلى الموجود</button>
+        <button class="chip" data-mode="replace">استبدل الكل</button>
+      </div>
+      <div class="warn" id="replaceWarn">⚠️ سيُحذف كل سيرفر قديم على هذا الجهاز ويبقى الجديد فقط.</div>
+    </div>
 
     <button class="main" id="sendBtn">إرسال إلى التلفزيون</button>
     <div id="sendMsg" class="msg"></div>
-    <button class="link hidden" id="cancelBtn">إلغاء الإرسال</button>
+    <button class="link hidden" id="cancelBtn" style="margin-top:12px">إلغاء الإرسال</button>
   </div>
 </div>
+
+<template id="serverTpl">
+  <div class="server">
+    <div class="head"><span class="title">سيرفر</span><button class="x" title="إزالة">×</button></div>
+    <input class="url ltr" placeholder="http://server:port">
+    <div class="row2" style="margin-top:8px">
+      <button class="chip" data-url="http://libanon4k.eu">Neo</button>
+      <button class="chip" data-url="http://maripor.com">Dino</button>
+    </div>
+    <input class="user ltr" placeholder="اسم المستخدم" autocomplete="off">
+    <input class="pass ltr" placeholder="كلمة السر" autocomplete="off">
+  </div>
+</template>
 
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut }
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-import { getFirestore, doc, setDoc, deleteDoc, onSnapshot, serverTimestamp }
+import { getFirestore, doc, setDoc, deleteDoc, onSnapshot, serverTimestamp, collection, getDocs }
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 const app = initializeApp({
@@ -101,16 +141,18 @@ const app = initializeApp({
 const auth = getAuth(app);
 const db = getFirestore(app);
 const $ = id => document.getElementById(id);
-const ALPHABET = /^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{8}$/;
+const CODE_RE = /^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{8}$/;
+const normCode = v => v.toUpperCase().replace(/[\s-]/g, "");
+const prettyCode = c => c.slice(0, 4) + "-" + c.slice(4);
 
 function show(el, cls, text) { el.className = "msg " + cls; el.textContent = text; }
 
+// ---------- الدخول ----------
 onAuthStateChanged(auth, u => {
   $("loginView").classList.toggle("hidden", !!u);
   $("sendView").classList.toggle("hidden", !u);
-  if (u) $("whoami").textContent = u.email;
+  if (u) { $("whoami").textContent = u.email; loadBook(); }
 });
-
 $("loginBtn").onclick = async () => {
   show($("loginMsg"), "info", "جارٍ الدخول…");
   try { await signInWithEmailAndPassword(auth, $("email").value.trim(), $("pw").value); }
@@ -118,43 +160,121 @@ $("loginBtn").onclick = async () => {
 };
 $("logoutBtn").onclick = () => signOut(auth);
 
-// أزرار Neo / Dino
-document.querySelectorAll(".chip").forEach(b => b.onclick = () => { $("url").value = b.dataset.url; });
+// ---------- دفتر الأجهزة (Firestore: devices/{code}) ----------
+let book = [];
+async function loadBook(selectCode) {
+  try {
+    const snap = await getDocs(collection(db, "devices"));
+    book = snap.docs.map(d => ({ code: d.id, name: d.data().name || "" }))
+                    .sort((a, b) => (a.name || a.code).localeCompare(b.name || b.code, "ar"));
+  } catch (e) { book = []; }
+  const sel = $("book");
+  sel.innerHTML = '<option value="">— اختر جهازاً —</option>' +
+    book.map(d => `<option value="${d.code}">${(d.name || "بدون اسم").replace(/</g, "&lt;")}  ·  ${prettyCode(d.code)}</option>`).join("");
+  if (selectCode) sel.value = selectCode;
+}
+$("book").onchange = () => {
+  const d = book.find(x => x.code === $("book").value);
+  if (!d) return;
+  $("code").value = prettyCode(d.code);
+  $("owner").value = d.name;
+};
+$("bookDel").onclick = async () => {
+  const code = $("book").value;
+  if (!code) return;
+  const d = book.find(x => x.code === code);
+  if (!confirm(`حذف "${d?.name || prettyCode(code)}" من الدفتر؟ (لا يؤثّر على الجهاز نفسه)`)) return;
+  await deleteDoc(doc(db, "devices", code)).catch(() => {});
+  loadBook();
+};
 
-// تفكيك رابط M3U: http://host:port/get.php?username=U&password=P
+// ---------- السيرفرات ----------
+function addServerRow(data = {}) {
+  const node = $("serverTpl").content.firstElementChild.cloneNode(true);
+  node.querySelector(".url").value = data.url || "";
+  node.querySelector(".user").value = data.user || "";
+  node.querySelector(".pass").value = data.pass || "";
+  node.querySelector(".x").onclick = () => { node.remove(); renumber(); };
+  node.querySelectorAll(".chip").forEach(b => b.onclick = () => { node.querySelector(".url").value = b.dataset.url; });
+  $("servers").appendChild(node);
+  renumber();
+  return node;
+}
+function renumber() {
+  [...$("servers").children].forEach((n, i) => n.querySelector(".title").textContent = "سيرفر " + (i + 1));
+}
+function readServers() {
+  return [...$("servers").children].map(n => {
+    let url = n.querySelector(".url").value.trim().replace(/\/+$/, "");
+    if (url && !/^https?:\/\//i.test(url)) url = "http://" + url;
+    return { url, user: n.querySelector(".user").value.trim(), pass: n.querySelector(".pass").value.trim() };
+  }).filter(s => s.url || s.user || s.pass);
+}
+$("addServer").onclick = () => addServerRow().querySelector(".url").focus();
+addServerRow();
+
+// لصق M3U: http://host:port/get.php?username=U&password=P ← يملأ أول صف فارغ أو يضيف صفاً
 $("m3u").addEventListener("input", () => {
   try {
     const u = new URL($("m3u").value.trim());
     const user = u.searchParams.get("username"), pass = u.searchParams.get("password");
-    if (user && pass) {
-      $("url").value = u.protocol + "//" + u.host;
-      $("user").value = user; $("pass").value = pass;
-    }
+    if (!user || !pass) return;
+    const data = { url: u.protocol + "//" + u.host, user, pass };
+    const empty = [...$("servers").children].find(n =>
+      !n.querySelector(".url").value && !n.querySelector(".user").value && !n.querySelector(".pass").value);
+    if (empty) {
+      empty.querySelector(".url").value = data.url;
+      empty.querySelector(".user").value = user;
+      empty.querySelector(".pass").value = pass;
+    } else addServerRow(data);
+    $("m3u").value = "";
   } catch (_) {}
 });
 
+// ---------- الوضع ----------
+let mode = "add";
+document.querySelectorAll("[data-mode]").forEach(b => b.onclick = () => {
+  mode = b.dataset.mode;
+  document.querySelectorAll("[data-mode]").forEach(x => x.classList.toggle("on", x === b));
+  $("replaceWarn").style.display = mode === "replace" ? "block" : "none";
+});
+
+// ---------- الإرسال ----------
 let unsub = null, currentCode = null;
 
 $("sendBtn").onclick = async () => {
-  const code = $("code").value.toUpperCase().replace(/[\s-]/g, "");
-  let url = $("url").value.trim().replace(/\/+$/, "");
-  const user = $("user").value.trim(), pass = $("pass").value.trim();
+  const code = normCode($("code").value);
+  const name = $("owner").value.trim();
+  const servers = readServers();
   const msg = $("sendMsg");
 
-  if (!ALPHABET.test(code)) return show(msg, "err", "كود الجهاز غير صحيح — 8 خانات كما تظهر على التلفزيون.");
-  if (!url || !user || !pass) return show(msg, "err", "يرجى تعبئة السيرفر واسم المستخدم وكلمة السر.");
-  if (!/^https?:\/\//i.test(url)) url = "http://" + url;
+  if (!CODE_RE.test(code)) return show(msg, "err", "كود الجهاز غير صحيح — 8 خانات كما تظهر على التلفزيون.");
+  const incomplete = servers.findIndex(s => !s.url || !s.user || !s.pass);
+  if (incomplete >= 0) return show(msg, "err", `سيرفر ${incomplete + 1} ناقص — املأ السيرفر واسم المستخدم وكلمة السر، أو احذفه.`);
+  if (!servers.length && !name) return show(msg, "err", "أضف سيرفراً واحداً على الأقل، أو اكتب اسم صاحب الجهاز.");
+  if (!servers.length && mode === "replace") return show(msg, "err", "\"استبدل الكل\" يحتاج سيرفراً جديداً واحداً على الأقل.");
+  if (servers.length > 10) return show(msg, "err", "الحدّ الأقصى 10 سيرفرات في الإرسال الواحد.");
+  if (mode === "replace" && !confirm("سيُحذف كل سيرفر قديم على هذا الجهاز. متابعة؟")) return;
+
+  const data = { accounts: servers, mode, name, createdAt: serverTimestamp() };
+  // للأجهزة على نسخة 2.04.0: تفهم سيرفراً واحداً بهذه الحقول.
+  if (servers.length) Object.assign(data, { url: servers[0].url, user: servers[0].user, pass: servers[0].pass });
 
   $("sendBtn").disabled = true;
   try {
-    await setDoc(doc(db, "push", code), { url, user, pass, createdAt: serverTimestamp() });
+    await setDoc(doc(db, "push", code), data);
   } catch (e) {
     $("sendBtn").disabled = false;
     return show(msg, "err", "تعذّر الإرسال (" + (e.code || e.message) + "). تأكّد من قواعد Firestore.");
   }
 
+  // حفظ الجهاز في الدفتر (الاسم الجديد إن وُجد، وإلا يبقى القديم).
+  const known = book.find(d => d.code === code);
+  setDoc(doc(db, "devices", code), { name: name || known?.name || "", updatedAt: serverTimestamp() }, { merge: true })
+    .then(() => loadBook(code)).catch(() => {});
+
   currentCode = code;
-  show(msg, "info", "أُرسل ✓ — بانتظار التلفزيون… (يجب أن تكون شاشة \"أدخل البيانات من هاتفك\" مفتوحة عليه)");
+  show(msg, "info", "أُرسل ✓ — بانتظار التلفزيون… يستلمه فور فتح التطبيق أو الشاشة الرئيسية، أو من شاشة \"أدخل البيانات من هاتفك\".");
   $("cancelBtn").classList.remove("hidden");
 
   // التطبيق يحذف المستند فور استلامه — اختفاؤه يعني نجاح الاستلام.
@@ -162,11 +282,12 @@ $("sendBtn").onclick = async () => {
   unsub = onSnapshot(doc(db, "push", code), snap => {
     if (!snap.exists()) {
       unsub(); unsub = null; currentCode = null;
-      show(msg, "ok", "تم الاستلام على التلفزيون ✓ — الجهاز يسجّل الدخول الآن.");
+      show(msg, "ok", "تم الاستلام على التلفزيون ✓");
       $("cancelBtn").classList.add("hidden");
       $("sendBtn").disabled = false;
     }
   });
+  $("sendBtn").disabled = false;
 };
 
 $("cancelBtn").onclick = async () => {
@@ -176,7 +297,6 @@ $("cancelBtn").onclick = async () => {
   currentCode = null;
   show($("sendMsg"), "info", "أُلغي الإرسال.");
   $("cancelBtn").classList.add("hidden");
-  $("sendBtn").disabled = false;
 };
 </script>
 </body>
