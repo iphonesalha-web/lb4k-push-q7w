@@ -84,7 +84,7 @@
     <label>كود الجهاز (يظهر على التلفزيون في شاشة "أدخل البيانات من هاتفك")</label>
     <input id="code" maxlength="9" placeholder="XXXX-XXXX">
 
-    <div class="hint">الجهاز يجب أن يكون مُفعّلاً بكود NMS أولاً. الكود يظهر في "أدخل البيانات من هاتفك" وفي الإعدادات ← معلومات التطبيق.</div>
+    <div class="hint">الكود يظهر على شاشة التفعيل، وفي "أدخل البيانات من هاتفك"، وفي الإعدادات ← معلومات التطبيق.</div>
 
     <label>اسم الزبون (للدفتر هنا فقط)</label>
     <input id="owner" placeholder="مثلاً: أحمد - آخن">
@@ -111,6 +111,14 @@
     <button class="main" id="sendBtn">إرسال إلى التلفزيون</button>
     <div id="sendMsg" class="msg"></div>
     <button class="link hidden" id="cancelBtn" style="margin-top:12px">إلغاء الإرسال</button>
+
+    <div class="section">
+      <h2>التفعيل عن بُعد</h2>
+      <div class="hint">يفعّل جهاز الزبون بدون كود شراء. إن ملأت سيرفرات فوق تُرسل معه، وإلا يُدخل الزبون سيرفره بنفسه.</div>
+      <button class="add" id="activateBtn" style="color:var(--ok);border-color:var(--ok)">✅ تفعيل هذا الجهاز</button>
+      <div class="hint" style="margin-top:14px">الإيقاف يعيد الجهاز إلى شاشة التفعيل، ولا يقبل الكود القديم بعدها. لإعادته اضغط "تفعيل" من جديد.</div>
+      <button class="add" id="blockBtn" style="color:var(--err);border-color:var(--err)">⛔ إيقاف هذا الجهاز</button>
+    </div>
 
   </div>
 </div>
@@ -284,6 +292,49 @@ $("sendBtn").onclick = async () => {
   });
   $("sendBtn").disabled = false;
 };
+
+// ---------- تفعيل / إيقاف ----------
+async function sendCommand(kind) {
+  const code = normCode($("code").value);
+  const msg = $("sendMsg");
+  if (!CODE_RE.test(code)) return show(msg, "err", "اكتب كود الجهاز أولاً.");
+  const known = book.find(d => d.code === code);
+  const label = known?.name || $("owner").value.trim() || prettyCode(code);
+  let data;
+  if (kind === "activate") {
+    const servers = readServers();
+    const incomplete = servers.findIndex(s => !s.url || !s.user || !s.pass);
+    if (incomplete >= 0) return show(msg, "err", `سيرفر ${incomplete + 1} ناقص — املأه أو احذفه.`);
+    if (!confirm(`تفعيل "${label}" بدون كود شراء؟`)) return;
+    data = { activate: true, accounts: servers, mode, createdAt: serverTimestamp() };
+  } else {
+    if (!confirm(`إيقاف "${label}"؟ سيعود إلى شاشة التفعيل.`)) return;
+    data = { deactivate: true, createdAt: serverTimestamp() };
+  }
+  try {
+    await setDoc(doc(db, "nms_push", code), data);
+  } catch (e) {
+    return show(msg, "err", "تعذّر الإرسال (" + (e.code || e.message) + "). تأكّد من قواعد Firestore.");
+  }
+  const name = $("owner").value.trim() || known?.name || "";
+  setDoc(doc(db, "nms_devices", code), { name, stopped: kind !== "activate", updatedAt: serverTimestamp() }, { merge: true })
+    .then(() => loadBook(code)).catch(() => {});
+  currentCode = code;
+  show(msg, "info", kind === "activate"
+    ? "أُرسل التفعيل ✓ — بانتظار التلفزيون (يستلمه من شاشة التفعيل خلال ثوانٍ)…"
+    : "أُرسل أمر الإيقاف ✓ — يُطبَّق عند فتح التطبيق أو الشاشة الرئيسية على ذلك الجهاز.");
+  $("cancelBtn").classList.remove("hidden");
+  if (unsub) unsub();
+  unsub = onSnapshot(doc(db, "nms_push", code), snap => {
+    if (!snap.exists()) {
+      unsub(); unsub = null; currentCode = null;
+      show(msg, "ok", kind === "activate" ? "تم تفعيل الجهاز ✓" : "تم إيقاف الجهاز ✓");
+      $("cancelBtn").classList.add("hidden");
+    }
+  });
+}
+$("activateBtn").onclick = () => sendCommand("activate");
+$("blockBtn").onclick = () => sendCommand("block");
 
 $("cancelBtn").onclick = async () => {
   if (!currentCode) return;
