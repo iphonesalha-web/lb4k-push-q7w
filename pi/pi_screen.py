@@ -36,11 +36,12 @@ def net_bytes():
     return rx, tx
 
 
-def bar(pct, width=24, warn=70, crit=90):
+def bar(pct, width=30, warn=70, crit=90):
     pct = max(0.0, min(100.0, pct))
     n = int(round(pct / 100 * width))
     col = G if pct < warn else (Y if pct < crit else R)
-    return f"{col}{'█' * n}{D}{'░' * (width - n)}{X}"
+    # رموز ASCII فقط: خطوط الشاشة النصية ترسم █ ░ ككتل ملتصقة
+    return f"{D}[{X}{col}{'|' * n}{D}{'.' * (width - n)}]{X}"
 
 
 def human(b):
