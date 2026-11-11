@@ -1,7 +1,7 @@
 #!/bin/bash
 # شاشة معلومات الـ Pi على التلفزيون (HDMI)
-#   تثبيت:  curl -fsSL https://iphonesalha-web.github.io/lb4k-push-q7w/pi/install-pi-screen.sh | sudo bash
-#   إلغاء:  curl -fsSL https://iphonesalha-web.github.io/lb4k-push-q7w/pi/install-pi-screen.sh | sudo bash -s remove
+#   تثبيت:  curl -fsSL https://raw.githubusercontent.com/iphonesalha-web/lb4k-push-q7w/main/pi/install-pi-screen.sh | sudo bash
+#   إلغاء:  curl -fsSL https://raw.githubusercontent.com/iphonesalha-web/lb4k-push-q7w/main/pi/install-pi-screen.sh | sudo bash -s remove
 set -e
 [ "$(id -u)" = 0 ] || { echo "شغّله مع sudo"; exit 1; }
 
@@ -21,7 +21,7 @@ DEBIAN_FRONTEND=noninteractive apt-get install -y -qq python3-pil fonts-dejavu-c
   DEBIAN_FRONTEND=noninteractive apt-get install -y -qq python3-pil fonts-dejavu-core cron >/dev/null || true
 systemctl enable --now cron 2>/dev/null || true
 
-B=https://iphonesalha-web.github.io/lb4k-push-q7w/pi
+B=https://raw.githubusercontent.com/iphonesalha-web/lb4k-push-q7w/main/pi
 curl -fsSL $B/pi_screen.py -o /usr/local/bin/pi_screen.py
 curl -fsSL $B/pi_screen_gfx.py -o /usr/local/bin/pi_screen_gfx.py
 chmod 755 /usr/local/bin/pi_screen.py /usr/local/bin/pi_screen_gfx.py

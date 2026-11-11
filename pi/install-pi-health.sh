@@ -1,7 +1,7 @@
 #!/bin/bash
 # حارس الـ Pi — تنبيهات تيليجرام (الحرارة، الكهرباء، الهارد، الذاكرة، الخدمات) + أمر /status
-#   تثبيت:  curl -fsSL https://iphonesalha-web.github.io/lb4k-push-q7w/pi/install-pi-health.sh | sudo bash
-#   إلغاء:  curl -fsSL https://iphonesalha-web.github.io/lb4k-push-q7w/pi/install-pi-health.sh | sudo bash -s remove
+#   تثبيت:  curl -fsSL https://raw.githubusercontent.com/iphonesalha-web/lb4k-push-q7w/main/pi/install-pi-health.sh | sudo bash
+#   إلغاء:  curl -fsSL https://raw.githubusercontent.com/iphonesalha-web/lb4k-push-q7w/main/pi/install-pi-health.sh | sudo bash -s remove
 set -e
 [ "$(id -u)" = 0 ] || { echo "شغّله مع sudo"; exit 1; }
 
@@ -18,7 +18,7 @@ if ! ls /home/*/.iptv-monitor/config.json >/dev/null 2>&1; then
   exit 1
 fi
 
-B=https://iphonesalha-web.github.io/lb4k-push-q7w/pi
+B=https://raw.githubusercontent.com/iphonesalha-web/lb4k-push-q7w/main/pi
 curl -fsSL $B/pi_screen.py -o /usr/local/bin/pi_screen.py
 curl -fsSL $B/pi_health.py -o /usr/local/bin/pi_health.py
 chmod 755 /usr/local/bin/pi_screen.py /usr/local/bin/pi_health.py
