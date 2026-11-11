@@ -140,6 +140,11 @@ def problems():
     return p
 
 
+def ltr(x):
+    # عزل الأرقام والوحدات حتى لا يقلب تيليجرام ترتيبها داخل السطر العربي
+    return "\u2066" + str(x) + "\u2069"
+
+
 def status_text():
     t = temp()
     d_sd = ps.disk("/")
@@ -147,24 +152,24 @@ def status_text():
     load = " ".join(ps.read("/proc/loadavg", "0 0 0").split()[:3])
     lines = ["📊 حالة الـ Pi", ""]
     lines.append(f"🌡️ الحرارة: {t:.1f}°" if t is not None else "🌡️ الحرارة: –")
-    lines.append(f"⚙️ الحمل: {load}")
+    lines.append(f"⚙️ الحمل: {ltr(load)}")
     lines.append(f"🧠 الذاكرة: {ram_pct():.0f}%")
     if d_sd:
-        lines.append(f"💾 SD: {ps.human(d_sd[0])} / {ps.human(d_sd[1])}")
-    lines.append(f"💽 الهارد: {ps.human(hdd[0])} / {ps.human(hdd[1])}" if hdd else "💽 الهارد: غير موصول ⚠️")
+        lines.append(f"💾 كرت SD: {ltr(ps.human(d_sd[0]) + ' / ' + ps.human(d_sd[1]))}")
+    lines.append(f"💽 الهارد: {ltr(ps.human(hdd[0]) + ' / ' + ps.human(hdd[1]))}" if hdd else "💽 الهارد: غير موصول ⚠️")
     w = throttle_now()
     if w is not None:
         lines.append("⚡ الكهرباء: " + ("سليمة ✅" if not w else "، ".join(w)))
-    lines.append(f"⏱️ يعمل منذ: {ps.uptime()}")
-    lines.append(f"🌐 IP: {ps.ip_addr()}")
+    lines.append(f"⏱️ يعمل منذ: {ltr(ps.uptime())}")
+    lines.append(f"🌐 العنوان: {ltr(ps.ip_addr())}")
     st, age = ps.iptv()
     if st:
         lines.append("")
         for name, s in st.items():
             if isinstance(s, dict):
                 ok = not s.get("fails") and age < MONITOR_STALE
-                lines.append(f"{'✅' if ok else '⚠️'} {name}: {s.get('last_ms') or '–'} ms · "
-                             f"اتصالات {s.get('cons', '–')}")
+                lines.append(f"{'✅' if ok else '⚠️'} {name}: {ltr(str(s.get('last_ms') or '–') + ' ms')} · "
+                             f"اتصالات {ltr(s.get('cons', '–'))}")
         lines.append(f"(آخر فحص قبل {int(age)} ث)" if age < 120 else f"(آخر فحص قبل {dur(age)})")
     cs = ps.containers()
     if cs:
