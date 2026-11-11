@@ -131,7 +131,7 @@ class Painter:
                 a = math.radians(ang)
                 px, py = cx + (r - 13) * math.cos(a), cy + (r - 13) * math.sin(a)
                 d.ellipse((px - 13, py - 13, px + 13, py + 13), fill=color)
-        self.text(d, (cx, cy), value, 60 if len(value) <= 4 else 50, TXT, True, "mm")
+        self.text(d, (cx, cy), value, 60 if len(value) <= 4 else (50 if len(value) <= 6 else 38), TXT, True, "mm")
         self.text(d, (cx, cy + 112), sub, 24, SUB, False, "mm")
         self.text(d, (cx, y1 - 36), label, 32, TXT, True, "mm")
 
@@ -200,8 +200,12 @@ class Painter:
                    f"{ps.human(mu)} / {ps.human(mt)}", self.level(rp, 80, 92))
         if hdd:
             hp = hdd[0] / hdd[1] * 100
-            self.gauge(d, boxes[3], self.t("الهارد ديسك", "HDD"), hp, f"{hp:.0f}%",
-                       f"{ps.human(hdd[0])} / {ps.human(hdd[1])}", self.level(hp, 80, 92) if hp > 1 else BLUE)
+            # نسبة صغيرة جداً لا تظهر كـ 0%
+            val = (f"{hp:.0f}%" if hp >= 10 else f"{hp:.1f}%" if hp >= 1
+                   else f"{hp:.2f}%" if hp >= 0.01 else "<0.01%")
+            self.gauge(d, boxes[3], self.t("الهارد ديسك", "HDD"), max(hp, 1.5), val,
+                       f"{ps.human(hdd[0])} / {ps.human(hdd[1])}",
+                       self.level(hp, 80, 92))
         else:
             self.gauge(d, boxes[3], self.t("الهارد ديسك", "HDD"), 0, "!", self.t("غير موصول", "not mounted"), RED)
 
