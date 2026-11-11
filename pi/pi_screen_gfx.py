@@ -47,13 +47,22 @@ class Fb:
             raise RuntimeError(f"unsupported framebuffer {self.w}x{self.h}@{self.bpp}")
         self.f = open(dev, "r+b", buffering=0)
 
+    @staticmethod
+    def rgb565(img):
+        # بعض نسخ Pillow لا تملك محوّل "BGR;16" — نحسبه بأنفسنا (little-endian)
+        from PIL import Image, ImageChops
+        r, g, b = img.split()
+        hi = ImageChops.add(r.point(lambda v: v & 0xF8), g.point(lambda v: v >> 5))
+        lo = ImageChops.add(g.point(lambda v: ((v >> 2) & 7) << 5), b.point(lambda v: v >> 3))
+        return Image.merge("LA", (lo, hi)).tobytes()
+
     def show(self, img):
         if img.size != (self.w, self.h):
             img = img.resize((self.w, self.h))
         if self.bpp == 32:
             data = img.convert("RGBA").tobytes("raw", "BGRA")
         else:
-            data = img.convert("RGB").tobytes("raw", "BGR;16")
+            data = self.rgb565(img.convert("RGB"))
         row = self.w * self.bpp // 8
         self.f.seek(0)
         if row == self.stride:
@@ -299,7 +308,11 @@ def main():
         if test:
             img.save(sys.argv[sys.argv.index("--png") + 1])
             return
-        fb.show(img)
+        try:
+            fb.show(img)
+        except Exception as e:  # لا نعيد التشغيل كل 3 ثوانٍ — نعود للشاشة النصية
+            print(f"graphics failed ({e}) — text mode", flush=True)
+            os.execv(sys.executable, [sys.executable, "-u", os.path.join(os.path.dirname(os.path.abspath(__file__)), "pi_screen.py")])
         idle0, tot0, rx0, tx0, t0 = idle1, tot1, rx1, tx1, t1
         time.sleep(max(0.2, REFRESH - (time.time() - t1)))
 
