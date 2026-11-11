@@ -7,15 +7,24 @@ set -e
 
 if [ "$1" = "remove" ]; then
   systemctl disable --now pi-screen.service 2>/dev/null || true
-  rm -f /etc/systemd/system/pi-screen.service /usr/local/bin/pi_screen.py
+  rm -f /etc/systemd/system/pi-screen.service /usr/local/bin/pi_screen.py /usr/local/bin/pi_screen_gfx.py
   systemctl daemon-reload
   systemctl enable --now getty@tty1.service
   echo "✅ أُزيلت الشاشة ورجعت شاشة الدخول العادية."
   exit 0
 fi
 
-curl -fsSL https://iphonesalha-web.github.io/lb4k-push-q7w/pi/pi_screen.py -o /usr/local/bin/pi_screen.py
-chmod 755 /usr/local/bin/pi_screen.py
+echo "… تنزيل المكتبات (قد يأخذ دقيقة)"
+apt-get update -qq || true
+# Pillow للرسم، خط DejaVu، libraqm لتشكيل الحروف العربية، cron لمراقب السيرفرات
+DEBIAN_FRONTEND=noninteractive apt-get install -y -qq python3-pil fonts-dejavu-core libraqm0 cron >/dev/null || \
+  DEBIAN_FRONTEND=noninteractive apt-get install -y -qq python3-pil fonts-dejavu-core cron >/dev/null || true
+systemctl enable --now cron 2>/dev/null || true
+
+B=https://iphonesalha-web.github.io/lb4k-push-q7w/pi
+curl -fsSL $B/pi_screen.py -o /usr/local/bin/pi_screen.py
+curl -fsSL $B/pi_screen_gfx.py -o /usr/local/bin/pi_screen_gfx.py
+chmod 755 /usr/local/bin/pi_screen.py /usr/local/bin/pi_screen_gfx.py
 
 # خط كبير وواضح على التلفزيون إن وُجد
 FONT=""
@@ -34,7 +43,7 @@ Conflicts=getty@tty1.service
 [Service]
 Type=simple
 $PRE
-ExecStart=/usr/bin/python3 -u /usr/local/bin/pi_screen.py
+ExecStart=/usr/bin/python3 -u /usr/local/bin/pi_screen_gfx.py
 StandardInput=tty
 StandardOutput=tty
 TTYPath=/dev/tty1
@@ -55,5 +64,6 @@ sysctl -q -p /etc/sysctl.d/90-pi-screen.conf || true
 systemctl daemon-reload
 systemctl disable --now getty@tty1.service 2>/dev/null || true
 systemctl enable --now pi-screen.service
-echo "✅ الشاشة تعمل الآن على التلفزيون (تُحدَّث كل 3 ثوانٍ)."
+echo "✅ الشاشة تعمل الآن على التلفزيون (تُحدَّث كل ثانيتين)."
+echo "   cron: $(systemctl is-active cron)"
 echo "   للدخول بلوحة مفاتيح: اضغط Ctrl+Alt+F2"
