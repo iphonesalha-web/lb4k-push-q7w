@@ -63,7 +63,8 @@ sysctl -q -p /etc/sysctl.d/90-pi-screen.conf || true
 
 systemctl daemon-reload
 systemctl disable --now getty@tty1.service 2>/dev/null || true
-systemctl enable --now pi-screen.service
+systemctl enable pi-screen.service
+systemctl restart pi-screen.service
 echo "✅ الشاشة تعمل الآن على التلفزيون (تُحدَّث كل ثانيتين)."
 echo "   cron: $(systemctl is-active cron)"
 echo "   للدخول بلوحة مفاتيح: اضغط Ctrl+Alt+F2"
