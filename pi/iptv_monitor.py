@@ -112,6 +112,27 @@ def check_stream(url, user, pw, state_acc):
         return False, f"البث لا يعمل ({str(e)[:60]})"
 
 
+def home_net():
+    """يفحص إنترنت البيت نفسه: (dns_ok, net_ok). حتى لا نتهم السيرفر بعطل عندنا."""
+    dns_ok = False
+    for host in ("google.com", "cloudflare.com"):
+        try:
+            socket.getaddrinfo(host, 443)
+            dns_ok = True
+            break
+        except OSError:
+            pass
+    net_ok = False
+    for ip in ("1.1.1.1", "8.8.8.8"):
+        try:
+            socket.create_connection((ip, 443), timeout=5).close()
+            net_ok = True
+            break
+        except OSError:
+            pass
+    return dns_ok, net_ok
+
+
 def dur(sec):
     sec = int(sec)
     if sec < 3600:
@@ -136,8 +157,15 @@ def run(mode="cron"):
         problems = {}
 
         if not working:
-            errs = "، ".join(f"{u.split('//')[-1]}: {e}" for u, _, _, e in results)
-            problems["down"] = f"⛔ {name} متوقف بالكامل\n{errs}"
+            dns_ok, net_ok = home_net()
+            if not net_ok:
+                problems["home_net"] = "🏠 انقطع الإنترنت عن البيت — ليست مشكلة في السيرفر"
+            elif not dns_ok:
+                problems["home_dns"] = ("🏠 مشكلة DNS في البيت (AdGuard / الـ Pi) — الإنترنت يعمل لكن "
+                                        "أسماء المواقع لا تُترجم. ليست مشكلة في السيرفر.")
+            else:
+                errs = "، ".join(f"{u.split('//')[-1]}: {e}" for u, _, _, e in results)
+                problems["down"] = f"⛔ {name} متوقف بالكامل\n{errs}"
         else:
             url, _, info, _ = working[0]
             if not results[0][1] and len(urls) > 1:
@@ -189,7 +217,9 @@ def run(mode="cron"):
             if key not in problems:
                 since = alerted.pop(key)
                 if key != "expiry" and mode == "cron":
-                    telegram(conf, f"✅ {name} يعمل من جديد ({key}) — توقف تقريباً {dur(now - since)}")
+                    what = {"home_net": "رجع الإنترنت في البيت", "home_dns": "رجع DNS في البيت"}.get(
+                        key, f"{name} يعمل من جديد ({key})")
+                    telegram(conf, f"✅ {what} — توقف تقريباً {dur(now - since)}")
         for key in list(fails):
             if key not in problems:
                 fails.pop(key)
