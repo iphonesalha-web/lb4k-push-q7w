@@ -3,7 +3,7 @@
 set -e
 DIR="$HOME/.iptv-monitor"
 mkdir -p "$DIR"
-curl -fsSL https://iphonesalha-web.github.io/lb4k-push-q7w/pi/iptv_monitor.py -o "$DIR/iptv_monitor.py"
+curl -fsSL https://raw.githubusercontent.com/iphonesalha-web/lb4k-push-q7w/main/pi/iptv_monitor.py -o "$DIR/iptv_monitor.py"
 chmod 700 "$DIR/iptv_monitor.py"
 
 echo "=== مراقب سيرفرات LIBANON 4K ==="
