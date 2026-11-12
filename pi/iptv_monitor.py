@@ -217,8 +217,12 @@ def run(mode="cron"):
             if key not in problems:
                 since = alerted.pop(key)
                 if key != "expiry" and mode == "cron":
-                    what = {"home_net": "رجع الإنترنت في البيت", "home_dns": "رجع DNS في البيت"}.get(
-                        key, f"{name} يعمل من جديد ({key})")
+                    what = {"home_net": "رجع الإنترنت في البيت",
+                            "home_dns": "رجع DNS في البيت",
+                            "down": f"{name} يعمل من جديد",
+                            "main_down": f"{name}: الدومين الأساسي {urls[0].split('//')[-1]} يعمل من جديد",
+                            "stream": f"{name}: البث يعمل من جديد",
+                            "inactive": f"{name}: الحساب فعّال من جديد"}.get(key, f"{name} يعمل من جديد")
                     telegram(conf, f"✅ {what} — توقف تقريباً {dur(now - since)}")
         for key in list(fails):
             if key not in problems:
