@@ -41,6 +41,11 @@ DEFAULT_CONF = {
         "PayPal": "https://www.paypal.com",
         "Microsoft 365": "https://www.office.com",
         "Outlook": "https://outlook.live.com",
+        # فحوص أعمق لـ Microsoft: الصفحة الرئيسية قد تفتح بينما تسجيل الدخول والبريد معطّلان
+        "Microsoft Login": "https://login.microsoftonline.com/common/v2.0/.well-known/openid-configuration",
+        "Outlook Mail (Business)": "https://outlook.office365.com/owa/",
+        "Outlook.com Mail": "https://outlook.live.com/owa/",
+        "Teams": "https://teams.microsoft.com",
         "Strato": "https://www.strato.de",
         "Telekom": "https://www.telekom.de",
         "X (Twitter)": "https://x.com",
@@ -193,7 +198,11 @@ def http_ok(url):
 # ───────────────────────── التشغيل
 
 def run(report_only=False):
-    conf = DEFAULT_CONF | load_json(CONF, {})
+    user = load_json(CONF, {})
+    conf = DEFAULT_CONF | user
+    # المواقع: القائمة الافتراضية + ما في ملف الإعداد (القيمة null تحذف موقعاً افتراضياً)
+    conf["http"] = {k: v for k, v in (DEFAULT_CONF["http"] | user.get("http", {})).items() if v}
+    conf["statuspages"] = {k: v for k, v in (DEFAULT_CONF["statuspages"] | user.get("statuspages", {})).items() if v}
     st = load_state()
     now = time.time()
     alerts, recov = [], []
