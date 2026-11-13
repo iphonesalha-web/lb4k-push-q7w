@@ -290,7 +290,10 @@ def status_text(st=None):
     for n in down:
         lines.append(f"🔴 {n}: متعطل منذ {dur(time.time() - st['http'][n]['since'])}")
     up = [n for n, ok in st.get("last_http", {}).items() if ok]
-    if not off and not down:
+    pending = [n for n, h in st.get("http", {}).items() if h.get("fails") and not h.get("alerted")]
+    for n in pending:
+        lines.append(f"🟡 {n}: لا يرد ({st['http'][n].get('err', '')}) — قيد التأكد")
+    if not off and not down and not pending:
         lines.append("✅ كل المواقع والخدمات تعمل")
     lines.append("")
     lines.append("يعمل: " + "، ".join(up))
