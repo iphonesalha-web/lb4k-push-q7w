@@ -23,6 +23,9 @@ DEFAULT_CONF = {
         "Cloudflare": "https://www.cloudflarestatus.com",
         "Discord": "https://discordstatus.com",
     },
+    # أقل درجة تستحق التنبيه لكل خدمة (minor / major / critical).
+    # Cloudflare وDiscord عندهما مشاكل جزئية صغيرة كثيرة لا تخصّنا — نكتفي بالكبيرة.
+    "min_impact": {"Cloudflare": "major", "Discord": "major"},
     "firebase": True,
     "apple": True,
     "http": {
@@ -117,14 +120,17 @@ def home_ok():
 IMPACT_AR = {"minor": "جزئية", "major": "كبيرة", "critical": "حرجة"}
 
 
-def check_statuspage(name, base):
+LEVEL = {"none": 0, "minor": 1, "major": 2, "critical": 3}
+
+
+def check_statuspage(name, base, min_impact="minor"):
     out = {}
     j = json.loads(fetch(base.rstrip("/") + "/api/v2/summary.json"))
     for inc in j.get("incidents", []):
         if inc.get("status") in ("resolved", "postmortem"):
             continue
         impact = inc.get("impact", "none")
-        if impact == "none":
+        if LEVEL.get(impact, 0) < LEVEL.get(min_impact, 1):
             continue
         key = f"sp:{name}:{inc.get('id')}"
         out[key] = (name, f"{inc.get('name', '')} (مشكلة {IMPACT_AR.get(impact, impact)})",
@@ -194,7 +200,9 @@ def run(report_only=False):
 
     # 1) صفحات الحالة
     official = {}
-    sources = [(n, (lambda n=n, u=u: check_statuspage(n, u))) for n, u in conf["statuspages"].items()]
+    mins = conf.get("min_impact", {})
+    sources = [(n, (lambda n=n, u=u: check_statuspage(n, u, mins.get(n, "minor"))))
+               for n, u in conf["statuspages"].items()]
     if conf.get("firebase"):
         sources.append(("Firebase", check_firebase))
     if conf.get("apple"):
