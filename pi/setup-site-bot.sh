@@ -11,8 +11,16 @@ CHAT=$(python3 -c "import json,glob; print(json.load(open(glob.glob('/home/*/.ip
 [ -n "$CHAT" ] || read -r -p "Chat ID: " CHAT </dev/tty
 
 echo "الصق توكن البوت الجديد من BotFather (لن يظهر أثناء اللصق) ثم Enter:"
-read -r -s TOKEN </dev/tty; echo
-TOKEN=$(echo "$TOKEN" | tr -d '[:space:]')
+# يقبل التوكن وحده أو رسالة BotFather كاملة — يأخذ السطر الذي فيه التوكن ويتجاهل الباقي
+TOKEN=""
+while IFS= read -r -s LINE </dev/tty; do
+  T=$(printf '%s' "$LINE" | grep -oE '[0-9]{6,}:[A-Za-z0-9_-]{30,}' | head -1 || true)
+  [ -n "$T" ] && { TOKEN="$T"; break; }
+done
+echo
+# ابتلاع بقية الأسطر الملصوقة حتى لا تُنفَّذ كأوامر في الطرفية
+while IFS= read -r -s -t 1 _ </dev/tty; do :; done
+[ -n "$TOKEN" ] || { echo "❌ لم أجد توكن"; exit 1; }
 
 NAME=$(curl -fsS "https://api.telegram.org/bot$TOKEN/getMe" | python3 -c "import json,sys; print(json.load(sys.stdin)['result']['username'])" 2>/dev/null) \
   || { echo "❌ التوكن غير صحيح — انسخه كاملاً من BotFather"; exit 1; }
