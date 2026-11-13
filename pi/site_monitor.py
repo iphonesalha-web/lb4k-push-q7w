@@ -238,7 +238,10 @@ def run(report_only=False):
             recov.append(f"🟢 {svc}: انتهت المشكلة المعلنة ({dur(now - since)})")
 
     # 2) فحص مباشر
-    results = {name: http_ok(url) for name, url in conf["http"].items()}
+    from concurrent.futures import ThreadPoolExecutor   # كل المواقع معاً — الفحص يأخذ ~12 ثانية مهما كثرت
+    with ThreadPoolExecutor(max_workers=10) as ex:
+        futs = {name: ex.submit(http_ok, url) for name, url in conf["http"].items()}
+        results = {name: f.result() for name, f in futs.items()}
     ok_ratio = sum(1 for ok, _ in results.values() if ok) / max(len(results), 1)
     local_trouble = ok_ratio < 0.6 or not home_ok()
     hs = st.setdefault("http", {})
