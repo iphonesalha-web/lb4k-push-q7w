@@ -73,6 +73,10 @@ def save_state(st):
 
 
 def telegram_conf():
+    # بوت خاص بالمواقع (إن أُعدّ) — حتى يمكن كتمه وحده في تيليجرام
+    own = load_json(CONF, {})
+    if own.get("bot") and own.get("chat"):
+        return own
     for p in glob.glob("/home/*/.iptv-monitor/config.json"):
         c = load_json(p, {})
         if c.get("bot") and c.get("chat"):
