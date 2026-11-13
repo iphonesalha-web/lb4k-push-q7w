@@ -183,6 +183,7 @@ def status_text():
 
 HELP = ("🤖 أوامر حارس الـ Pi:\n"
         "/status — حالة الـ Pi الآن (أو اكتب: حالة)\n"
+        "/sites — حالة المواقع المشهورة (أو اكتب: مواقع)\n"
         "/help — هذه القائمة\n\n"
         "التنبيهات تصلك تلقائياً عند: ارتفاع الحرارة فوق 75°، ضعف الكهرباء، "
         "فصل الهارد ديسك، امتلاء التخزين فوق 90%، امتلاء الذاكرة، ضغط المعالج، "
@@ -235,6 +236,12 @@ def handle_updates(conf, st, wait):
         text = (m.get("text") or "").strip().lower()
         if text.startswith("/status") or text in ("حالة", "الحالة", "status", "pi"):
             send(conf, status_text())
+        elif text.startswith("/sites") or text in ("مواقع", "المواقع", "sites"):
+            try:
+                import site_monitor
+                send(conf, site_monitor.status_text())
+            except Exception as e:
+                send(conf, f"🌐 مراقب المواقع غير مركّب ({e})")
         elif text.startswith("/help") or text.startswith("/start") or text in ("مساعدة", "help"):
             send(conf, HELP)
     save_state(st)
