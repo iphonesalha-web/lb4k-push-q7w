@@ -27,6 +27,48 @@ PURPLE = (170, 110, 255)
 FONT_DIRS = ["/usr/share/fonts/truetype/dejavu", "/usr/share/fonts/dejavu"]
 
 
+def board_model():
+    """«Raspberry Pi 5 · 8 GB» مختصرة للعرض في الرأس."""
+    m = ps.read("/proc/device-tree/model").replace("\x00", "").strip()
+    m = m.split(" Model")[0] if m else ""
+    return m
+
+
+def fan_state():
+    """(المستوى الحالي, الأعلى) لمروحة الـ PWM أو None إن لم توجد."""
+    import glob
+    for d in glob.glob("/sys/class/thermal/cooling_device*"):
+        if ps.read(d + "/type").strip() == "pwm-fan":
+            cur, mx = ps.read(d + "/cur_state").strip(), ps.read(d + "/max_state").strip()
+            if cur.isdigit() and mx.isdigit():
+                return int(cur), int(mx)
+    return None
+
+
+def port_open(port, host="127.0.0.1"):
+    import socket
+    try:
+        with socket.create_connection((host, port), timeout=0.3):
+            return True
+    except OSError:
+        return False
+
+
+def sites_state():
+    """(سليمة, الكل, قديم؟) من مراقب المواقع، أو None إن لم يكن مركّباً."""
+    import json
+    try:
+        with open("/var/lib/site-monitor/state.json") as f:
+            st = json.load(f)
+    except (OSError, ValueError):
+        return None
+    lh = st.get("last_http") or {}
+    if not lh:
+        return None
+    stale = time.time() - float(st.get("last_run") or 0) > 600
+    return sum(1 for v in lh.values() if v), len(lh), stale
+
+
 def font_path(bold):
     name = "DejaVuSans-Bold.ttf" if bold else "DejaVuSans.ttf"
     for d in FONT_DIRS:
@@ -78,7 +120,8 @@ class Painter:
     def __init__(self):
         from PIL import Image, ImageDraw, ImageFont, features
         self.Image, self.ImageDraw, self.ImageFont = Image, ImageDraw, ImageFont
-        self.arabic = features.check("raqm")  # تشكيل الحروف العربية متوفر؟
+        self.arabic = features.check("raqm")
+        self.model = board_model()  # تشكيل الحروف العربية متوفر؟
         self.fonts = {}
         self.cpu_h = deque(maxlen=HIST)
         self.temp_h = deque(maxlen=HIST)
@@ -159,7 +202,11 @@ class Painter:
 
         # ── الرأس
         self.text(d, (60, 42), "SALHA PI", 64, CYAN, True)
-        self.text(d, (60, 118), f"{ps.socket.gethostname()}   ·   {ps.ip_addr()}", 28, SUB)
+        head = [ps.socket.gethostname(), ps.ip_addr()]
+        model = self.model
+        if model:
+            head.append(model)
+        self.text(d, (60, 118), "   ·   ".join(head), 28, SUB)
         self.text(d, (1860, 34), time.strftime("%H:%M:%S"), 72, TXT, True, "ra")
         days = ["الاثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة", "السبت", "الأحد"]
         day = days[time.localtime().tm_wday] if A else time.strftime("%A")
@@ -241,7 +288,7 @@ class Painter:
         y = 890
         if not st:
             self.text(d, (90, y), self.t("المراقب غير مركّب", "monitor not installed"), 30, SUB)
-        for name, s in list((st or {}).items())[:3]:
+        for name, s in list((st or {}).items())[:2]:
             if not isinstance(s, dict):
                 continue
             ok = not s.get("fails") and age <= 600
@@ -257,6 +304,25 @@ class Painter:
             self.text(d, (1190, y + 3), f"{self.t('حتى', 'until')} {exp}", 30, SUB, False, "ra")
             y += 52
 
+        # ── سطر حالة الخدمات أسفل البطاقة: المواقع، AdGuard، MeTube
+        chips = []
+        ss = sites_state()
+        if ss:
+            okn, alln, stale = ss
+            chips.append((self.t(f"المواقع {okn}/{alln}", f"Sites {okn}/{alln}"),
+                          YELLOW if stale else (GREEN if okn == alln else RED)))
+        chips.append(("AdGuard", GREEN if port_open(53) else RED))
+        cs_all = ps.containers()
+        if cs_all is not None:
+            mt = [ok for n, ok in cs_all if n == "metube"]
+            chips.append(("MeTube", (GREEN if mt[0] else RED) if mt else SUB))
+        d.line((90, 978, 1190, 978), fill=LINE, width=2)
+        x = 90
+        for lab, col in chips:
+            d.ellipse((x, 997, x + 18, 1015), fill=col)
+            self.text(d, (x + 28, 990), lab, 26, TXT)
+            x += 48 + int(self.font(26).getlength(lab))
+
         # ── النظام
         box = (1240, 820, 1860, 1040)
         self.card(d, box, self.t("النظام", "SYSTEM"))
@@ -265,23 +331,31 @@ class Painter:
         power_ok = "OK" in th and "earlier" not in th
         rows = [
             (self.t("التشغيل", "Uptime"), ps.uptime(), TXT),
-            ("SD", f"{ps.human(sd[0])} / {ps.human(sd[1])}" if sd else "–", TXT),
+            (self.t("قرص النظام", "System disk"), f"{ps.human(sd[0])} / {ps.human(sd[1])}" if sd else "–", TXT),
             (self.t("الكهرباء", "Power"), ("OK" if power_ok else ("!" if th else "–")),
              GREEN if power_ok else (RED if th else SUB)),
         ]
-        cs = ps.containers()
+        fan = fan_state()
+        if fan:
+            cur, mx = fan
+            rows.append((self.t("المروحة", "Fan"),
+                         self.t(f"تعمل {cur}/{mx}", f"on {cur}/{mx}") if cur else self.t("متوقفة (بارد)", "off (cool)"),
+                         CYAN if cur else SUB))
+        cs = cs_all
         if cs:
             up = sum(1 for _, ok in cs if ok)
             rows.append((self.t("الخدمات", "Services"), f"{up}/{len(cs)}", GREEN if up == len(cs) else RED))
-        y = 885
-        for k, v, c in rows[:4]:
+        y = 878
+        step = 38 if len(rows) <= 4 else 31
+        size = 28 if len(rows) <= 4 else 25
+        for k, v, c in rows[:5]:
             if A:
-                self.text(d, (1830, y), k, 28, SUB, False, "ra")
-                self.text(d, (1270, y), v, 28, c, True, "la")
+                self.text(d, (1830, y), k, size, SUB, False, "ra")
+                self.text(d, (1270, y), v, size, c, True, "la")
             else:
-                self.text(d, (1270, y), k, 28, SUB)
-                self.text(d, (1830, y), v, 28, c, True, "ra")
-            y += 38
+                self.text(d, (1270, y), k, size, SUB)
+                self.text(d, (1830, y), v, size, c, True, "ra")
+            y += step
         return img
 
 
