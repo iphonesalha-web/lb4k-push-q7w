@@ -18,7 +18,12 @@ mem_gb=$(awk '/MemTotal/ {printf "%d", $2/1024/1024}' /proc/meminfo)
 echo "① تثبيت/تحديث Ollama…"
 DEBIAN_FRONTEND=noninteractive apt-get install -y -qq zstd curl >/dev/null
 curl -fsSL https://ollama.com/install.sh | sh >/tmp/ollama-install.log 2>&1 || { tail -20 /tmp/ollama-install.log; exit 1; }
-systemctl enable --now ollama >/dev/null 2>&1
+# متاح لكل أجهزة البيت (تطبيق الآيفون) وليس فقط من داخل الـ Pi
+mkdir -p /etc/systemd/system/ollama.service.d
+printf '[Service]\nEnvironment="OLLAMA_HOST=0.0.0.0:11434"\nEnvironment="OLLAMA_KEEP_ALIVE=30m"\n' > /etc/systemd/system/ollama.service.d/lan.conf
+systemctl daemon-reload
+systemctl enable ollama >/dev/null 2>&1
+systemctl restart ollama
 for i in $(seq 1 30); do curl -fsS http://127.0.0.1:11434/api/version >/dev/null 2>&1 && break; sleep 1; done
 echo "   $(ollama --version 2>/dev/null | tail -1)"
 
