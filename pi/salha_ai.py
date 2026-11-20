@@ -113,7 +113,7 @@ def _try_model(key, model):
     body = {"contents": [{"role": "user", "parts": [{"text": "قل: أهلاً نزار"}]}]}
     req = urllib.request.Request(url, data=json.dumps(body).encode(),
                                  headers={"Content-Type": "application/json", "x-goog-api-key": key})
-    with urllib.request.urlopen(req, timeout=30) as r:
+    with urllib.request.urlopen(req, timeout=60) as r:
         obj = json.loads(r.read())
     txt = "".join(p.get("text", "") for c in obj.get("candidates", [])
                   for p in (c.get("content") or {}).get("parts", []))
@@ -141,6 +141,18 @@ def test_key(key):
                     busy = model
                 errors.append(f"{model}: {info}")
                 break
+            except (TimeoutError, socket.timeout) as e:   # بطيء/مزدحم: المفتاح سليم، نجرّب التالي
+                if not busy:
+                    busy = model
+                errors.append(f"{model}: بطيء جداً الآن (timeout)")
+                break
+            except urllib.error.URLError as e:
+                if isinstance(e.reason, (TimeoutError, socket.timeout)):
+                    if not busy:
+                        busy = model
+                    errors.append(f"{model}: بطيء جداً الآن (timeout)")
+                    break
+                return False, f"لا يوجد اتصال بـ Google: {e}", None
             except Exception as e:
                 return False, f"لا يوجد اتصال بـ Google: {e}", None
     if busy:
