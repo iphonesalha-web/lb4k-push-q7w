@@ -163,12 +163,65 @@ def test_key(key):
 
 # ---------- السياق الإضافي ----------
 
+KNOWN = {  # وصف ما بناه نزار على الـ Pi — حتى لا يخترع النموذج
+    "salha-ai": "Salha AI — هذا المساعد نفسه (وسيط الذكاء الاصطناعي لتطبيق الآيفون، منفذ 8095)",
+    "adguard": "AdGuard Home — DNS البيت كله ومانع الإعلانات (إطفاء الـ Pi يوقف تصفح البيت)",
+    "metube": "MeTube — تنزيل فيديوهات يوتيوب وغيرها (منفذ 8081، يُستعمل من تطبيق «تحميل» على الآيفون)",
+    "immich": "Immich — نسخ احتياطي لصور آيفون الزوجة",
+    "iptv": "مراقب سيرفرات IPTV (LIBANON 4K / NMS)",
+    "site": "مراقب المواقع المشهورة (بوت Salha Sites على تيليجرام)",
+    "health": "حارس الـ Pi — بوت الحالة والتنبيهات على تيليجرام (/status)",
+    "screen": "شاشة المعلومات على التلفزيون",
+    "backup": "النسخة الاحتياطية الأسبوعية",
+    "docker": "Docker — يشغّل الحاويات",
+    "ssh": "SSH — الدخول عن بعد",
+    "aachen": "أخبار آخن على تيليجرام",
+    "ollama": "Ollama (يُفترض أنه حُذف)",
+}
+SYSTEM_UNITS = re.compile(r"^(systemd-|dbus|getty|user@|polkit|cron|rsyslog|ModemManager|NetworkManager|wpa_|avahi|bluetooth|"
+                          r"udisks|triggerhappy|rtkit|colord|cups|accounts|lightdm|serial-getty|containerd|rng|hciuart|"
+                          r"alsa|rpi-|dphys|packagekit|upower|wayvnc|lightdm|systemd)")
+
+
+def _describe(name):
+    low = name.lower()
+    return next((d for k, d in KNOWN.items() if k in low), "")
+
+
+def services_text():
+    out = []
+    try:
+        res = os.popen("systemctl list-units --type=service --state=running --no-legend --plain 2>/dev/null").read()
+        for line in res.splitlines():
+            unit = line.split()[0] if line.split() else ""
+            name = unit.removesuffix(".service")
+            if not name or SYSTEM_UNITS.match(name):
+                continue
+            d = _describe(name)
+            out.append(f"- خدمة {name}" + (f": {d}" if d else ""))
+        res = os.popen("systemctl list-timers --no-legend --plain 2>/dev/null").read()
+        for line in res.splitlines():
+            unit = next((w for w in line.split() if w.endswith(".timer")), "")
+            if unit and not SYSTEM_UNITS.match(unit) and not re.match(r"(apt-|man-db|logrotate|fstrim|e2scrub|dpkg)", unit):
+                d = _describe(unit)
+                out.append(f"- مؤقّت {unit}" + (f": {d}" if d else ""))
+        res = os.popen("docker ps --format '{{.Names}}|{{.Status}}' 2>/dev/null").read()
+        for line in res.splitlines():
+            n, _, st = line.partition("|")
+            d = _describe(n)
+            out.append(f"- حاوية Docker {n} ({st})" + (f": {d}" if d else ""))
+    except Exception as e:
+        out.append(f"(تعذّرت قراءة الخدمات: {e})")
+    return "\n".join(out) or "(لا توجد خدمات إضافية)"
+
+
 def pi_status():
     try:
         import pi_health
-        return pi_health.status_text()
+        base = pi_health.status_text()
     except Exception as e:
-        return f"(تعذّرت قراءة حالة الـ Pi: {e})"
+        base = f"(تعذّرت قراءة حالة الـ Pi: {e})"
+    return base + "\n\nالبرامج والخدمات الشغّالة الآن على الـ Pi (قائمة حقيقية):\n" + services_text()
 
 
 _news = {"at": 0, "text": ""}
@@ -207,7 +260,8 @@ def build_system(user_system, last_question, search=True):
         ("عندك أداة بحث Google — استعملها للأسئلة عن الأحداث والمعلومات الحديثة، ولا تخترع معلومات." if search
          else "ليس عندك بحث في الإنترنت: إذا لم تكن متأكداً من معلومة حديثة فقل ذلك بصراحة ولا تخترع."),
         "أجب بالعربية دائماً إلا إذا كتب المستخدم بلغة أخرى.",
-        "إذا سُئلت عن الـ Raspberry Pi أو حرارته أو خدماته فاعتمد على هذه الحالة الحقيقية الآن:\n" + pi_status(),
+        "إذا سُئلت عن الـ Raspberry Pi (Raspberry Pi 5 بذاكرة 8GB) أو حرارته أو برامجه فاعتمد فقط على هذه الحالة الحقيقية الآن، "
+        "ولا تخترع برامج أو أوصافاً غير موجودة فيها، ولا تنصح بأوامر الطرفية إلا إذا طُلب:\n" + pi_status(),
     ]
     if NEWS_WORDS.search(last_question or ""):
         parts.append("آخر الأخبار التي جمعها تطبيق أخبار آخن (استعملها مع البحث):\n" + news_text())
