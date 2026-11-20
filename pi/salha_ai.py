@@ -272,8 +272,11 @@ class Handler(BaseHTTPRequestHandler):
             n = int(self.headers.get("Content-Length") or 0)
             form = urllib.parse.parse_qs(self.rfile.read(min(n, 4096)).decode("utf-8", "replace"))
             raw = (form.get("key") or [""])[0]
+            raw = re.sub(r"\x1b\[[0-9;]*[~A-Za-z]|\[20[01]~", "", raw)  # رموز لصق من بعض التطبيقات
             m = re.search(r"AIza[0-9A-Za-z_-]{35}", raw)
             key = m.group(0) if m else re.sub(r"[^0-9A-Za-z_-]", "", raw)
+            if "AIza" in key:
+                key = key[key.index("AIza"):]
             if len(key) < 30:
                 return self._setup_page('<div class="card bad">❌ المفتاح غير كامل — انسخه مرة ثانية</div>')
             ok, info = test_key(key)
