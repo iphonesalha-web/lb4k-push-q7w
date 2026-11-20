@@ -17,9 +17,20 @@ if [ ! -f "$CONF" ] || [ "$1" = key ]; then
   echo
   echo "الصق مفتاح Gemini (من aistudio.google.com ← Get API key) ثم Enter."
   echo "(لن يظهر على الشاشة)"
-  read -r -s KEY </dev/tty; echo
-  KEY=$(printf '%s' "$KEY" | tr -d '[:space:]')
-  [ ${#KEY} -ge 20 ] || { echo "❌ المفتاح قصير جداً"; exit 1; }
+  # بعض تطبيقات SSH تقسم النص الملصوق على عدة أسطر أو تضيف رموز لصق —
+  # نقرأ حتى يكتمل مفتاح بشكل AIza… (39 حرفاً)
+  RAW=""; KEY=""
+  for i in 1 2 3 4 5; do
+    IFS= read -r -s LINE </dev/tty || break
+    RAW="$RAW$LINE"
+    KEY=$(printf '%s' "$RAW" | grep -oE 'AIza[0-9A-Za-z_-]{35}' | head -1)
+    [ -n "$KEY" ] && break
+    echo "   (تابع اللصق أو اضغط Enter مرة أخرى)"
+  done
+  echo
+  [ -n "$KEY" ] || KEY=$(printf '%s' "$RAW" | sed 's/\x1b\[[0-9;]*~//g' | tr -cd 'A-Za-z0-9_-')
+  [ ${#KEY} -ge 30 ] || { echo "❌ لم أستلم المفتاح كاملاً — جرّب مرة ثانية"; exit 1; }
+  echo "   استلمت مفتاحاً طوله ${#KEY} حرفاً (يبدأ بـ ${KEY:0:4}…)"
   OLD_TOKEN=$(python3 -c "import json;print(json.load(open('$CONF')).get('token',''))" 2>/dev/null || true)
   TOKEN=${OLD_TOKEN:-$(python3 -c "import secrets;print(secrets.token_urlsafe(18))")}
   umask 077
