@@ -55,7 +55,7 @@ def _list_models(key):
                     names.append(n)
         except Exception as e:
             print("models list failed:", e, file=sys.stderr, flush=True)
-    names = sorted(set(names), key=model_key)[:6]
+    names = sorted(set(names), key=model_key)[:10]
     if not names:
         names = [DEFAULT_MODEL]
     _models.update(at=time.time() if len(names) > 1 or key else 0, list=names)
@@ -121,22 +121,31 @@ def _try_model(key, model):
 
 
 def test_key(key):
-    """يجرّب النماذج المتاحة بالترتيب ويرجع (True, رد, النموذج) لأول نموذج يعمل مجاناً."""
+    """يجرّب كل النماذج المتاحة بالترتيب.
+    يرجع (True, رد, النموذج) لأول نموذج يعمل، أو ("busy", رسالة, النموذج) إذا كان نموذج مجاني
+    متاحاً لكنه مزدحم الآن (503) — المفتاح صحيح ويُحفظ، أو (False, الأخطاء, None)."""
     _models["at"] = 0  # مفتاح جديد = قائمة جديدة
-    errors = []
+    errors, busy = [], None
     for model in available_models(key, prefer=None):
-        try:
-            return True, _try_model(key, model), model
-        except urllib.error.HTTPError as e:
-            info = api_error(e)
-            if e.code in (400, 403) and "API key" in info:
-                return False, info, None      # المفتاح نفسه مرفوض — لا داعي لتجربة غيره
-            errors.append(f"{model}: {info}")
-            if e.code not in (404, 429, 400, 403):
+        for attempt in range(2):
+            try:
+                return True, _try_model(key, model), model
+            except urllib.error.HTTPError as e:
+                info = api_error(e)
+                if e.code in (400, 403) and "API key" in info:
+                    return False, info, None      # المفتاح نفسه مرفوض
+                if e.code >= 500 and attempt == 0:
+                    time.sleep(2)
+                    continue
+                if e.code >= 500 and not busy:
+                    busy = model
+                errors.append(f"{model}: {info}")
                 break
-        except Exception as e:
-            return False, f"لا يوجد اتصال بـ Google: {e}", None
-    return False, " | ".join(errors[:4]) or "لا توجد نماذج متاحة", None
+            except Exception as e:
+                return False, f"لا يوجد اتصال بـ Google: {e}", None
+    if busy:
+        return "busy", " | ".join(errors[:5]), busy
+    return False, " | ".join(errors[:5]) or "لا توجد نماذج متاحة", None
 
 
 # ---------- السياق الإضافي ----------
@@ -360,6 +369,14 @@ class Handler(BaseHTTPRequestHandler):
             if len(key) < 20:
                 return self._setup_page('<div class="card bad">❌ المفتاح غير كامل — انسخه مرة ثانية</div>')
             ok, info, good_model = test_key(key)
+            if ok == "busy":
+                c = conf()
+                c["key"] = key
+                c["model"] = good_model
+                save_conf(c)
+                return self._setup_page(
+                    f'<div class="card ok">✅ المفتاح صحيح وتم حفظه — النموذج المجاني {html.escape(good_model)} '
+                    f'مزدحم عند Google الآن (503)، جرّب المحادثة بعد دقائق.<br><span class="muted">{html.escape(info[:400])}</span></div>')
             if not ok:
                 hint = (f"<br><span class='muted'>المفتاح الذي وصل: يبدأ بـ «{html.escape(key[:6])}…» "
                         f"وينتهي بـ «…{html.escape(key[-4:])}»، طوله {len(key)} حرفاً.</span>")
@@ -404,7 +421,7 @@ class Handler(BaseHTTPRequestHandler):
             got = False
             order = [model] + [m for m in models if m != model]
             last = None
-            for mdl in order[:4]:
+            for mdl in order:
                 last = None
                 for search in (True, False):  # إن فشل البحث (حصة) نعيد بدونه
                     try:
@@ -418,11 +435,14 @@ class Handler(BaseHTTPRequestHandler):
                             raise
                         if search and e.code in (400, 429):
                             continue
+                        if e.code >= 500 and search:   # مزدحم: محاولة ثانية بعد لحظة
+                            time.sleep(1.5)
+                            continue
                         break
                 if got or last is None:
                     model = mdl
                     break
-                if last.code not in (404, 429):
+                if last.code not in (404, 429) and last.code < 500:
                     raise last
             if not got and last is not None:
                 raise last
