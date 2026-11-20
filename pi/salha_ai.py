@@ -250,13 +250,17 @@ def gemini_stream(key, model, system, messages, search=True):
 # ---------- OpenRouter (DeepSeek المجاني) ----------
 
 OR_BASE = "https://openrouter.ai/api/v1"
-OR_DEFAULT = "deepseek/deepseek-chat:free"
+OR_DEFAULT = "openrouter/free"   # موجّه OpenRouter: يختار نموذجاً مجانياً متاحاً
 _or_models = {"at": 0, "list": []}
 
 
+OR_PREFER = ["deepseek", "gemma-4", "ernie", "nemotron-3-ultra", "ling", "qwen", "llama", "mistral", "dots"]
+OR_SKIP = re.compile(r"decider|rerank|recraft|embed|guard|\bvl\b|-vl|omni|nano|lightning|lfm|flint|particle|coder|\b\d{1,2}b\b(?!-a)|1\.7b", re.I)
+
+
 def _or_rank(mid):
-    small = bool(re.search(r"\b\d{1,2}b\b|distill|mini|nano|tiny", mid))
-    return (0 if "deepseek" in mid else 1, 1 if small else 0, 1 if "r1" in mid else 0, mid)
+    pos = next((i for i, k in enumerate(OR_PREFER) if k in mid), len(OR_PREFER))
+    return (pos, mid)
 
 
 def or_models(prefer=None):
@@ -268,12 +272,12 @@ def or_models(prefer=None):
                 data = json.loads(r.read())
             for m in data.get("data", []):
                 mid = m.get("id", "")
-                if mid.endswith(":free") and "text" in str((m.get("architecture") or {}).get("output_modalities", ["text"])):
+                if mid.endswith(":free") and not OR_SKIP.search(mid) and "text" in str((m.get("architecture") or {}).get("output_modalities", ["text"])):
                     ids.append(mid)
         except Exception as e:
             print("openrouter models failed:", e, file=sys.stderr, flush=True)
-        ids = sorted(set(ids), key=_or_rank)[:8] or [OR_DEFAULT]
-        _or_models.update(at=time.time() if len(ids) > 1 else 0, list=ids)
+        ids = sorted(set(ids), key=_or_rank)[:7] + [OR_DEFAULT]
+        _or_models.update(at=time.time() if len(ids) > 1 else 0, list=list(dict.fromkeys(ids)))
     names = list(_or_models["list"])
     if prefer and prefer in names:
         names = [prefer] + [n for n in names if n != prefer]
@@ -332,7 +336,7 @@ def test_or_key(key):
     errors = []
     for model in or_models()[:5]:
         try:
-            with _or_req(key, {"model": model, "max_tokens": 40,
+            with _or_req(key, {"model": model, "max_tokens": 400,
                                "messages": [{"role": "user", "content": "قل: أهلاً نزار"}]}, 60) as r:
                 obj = json.loads(r.read())
             if obj.get("error"):
@@ -545,7 +549,7 @@ class Handler(BaseHTTPRequestHandler):
         # المرشحون بالترتيب: OpenRouter (DeepSeek) أولاً إن وُجد، ثم Gemini
         cands = []
         if c.get("or_key"):
-            cands += [("or", m) for m in or_models(c.get("or_model"))[:5]]
+            cands += [("or", m) for m in or_models(c.get("or_model"))[:4]] + [("or", OR_DEFAULT)]
         if c.get("key"):
             cands += [("gm", m) for m in available_models(c.get("key"))[:5]]
         want = req.get("model")
