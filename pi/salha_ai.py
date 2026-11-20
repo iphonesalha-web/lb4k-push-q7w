@@ -168,7 +168,7 @@ def api_error(e):
     if e.code == 429:
         return "تم تجاوز الحد المجاني لـ Gemini مؤقتاً — جرّب بعد قليل أو اختر gemini-2.5-flash-lite."
     if e.code in (400, 403) and "API key" in msg:
-        return "مفتاح Gemini غير صالح — أعد إعداد المفتاح على الـ Pi."
+        return f"Google رفض المفتاح (HTTP {e.code}): {msg[:200]}"
     return f"خطأ من Gemini (HTTP {e.code}) {msg[:200]}"
 
 
@@ -283,14 +283,15 @@ class Handler(BaseHTTPRequestHandler):
             raw = (form.get("key") or [""])[0]
             raw = re.sub(r"\x1b\[[0-9;]*[~A-Za-z]|\[20[01]~", "", raw)  # رموز لصق من بعض التطبيقات
             m = re.search(r"AIza[0-9A-Za-z_-]{35}", raw)
-            key = m.group(0) if m else re.sub(r"[^0-9A-Za-z_-]", "", raw)
-            if "AIza" in key:
-                key = key[key.index("AIza"):]
-            if len(key) < 30:
+            # شكل غير معروف؟ نحذف المسافات والأسطر فقط ولا نلمس باقي الرموز
+            key = m.group(0) if m else re.sub(r"\s+", "", raw)
+            if len(key) < 20:
                 return self._setup_page('<div class="card bad">❌ المفتاح غير كامل — انسخه مرة ثانية</div>')
             ok, info = test_key(key)
             if not ok:
-                return self._setup_page(f'<div class="card bad">❌ {html.escape(info)}</div>')
+                hint = (f"<br><span class='muted'>المفتاح الذي وصل: يبدأ بـ «{html.escape(key[:6])}…» "
+                        f"وينتهي بـ «…{html.escape(key[-4:])}»، طوله {len(key)} حرفاً.</span>")
+                return self._setup_page(f'<div class="card bad">❌ {html.escape(info)}{hint}</div>')
             c = conf()
             c["key"] = key
             save_conf(c)
