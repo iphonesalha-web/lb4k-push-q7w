@@ -46,6 +46,16 @@ if curl -fsS -o /dev/null "http://127.0.0.1:$PORT/api/version" 2>/dev/null; then
   echo "     http://$IP:$PORT/setup"
   echo
   echo "هناك: ① الصق مفتاح Gemini  ② انسخ رمز الدخول  ③ انسخ العناوين للتطبيق"
+  IP6=$(ip -6 addr show scope global | awk '/inet6/ && $2 !~ /^fd/ {print $2}' | cut -d/ -f1 | head -1)
+  TOKEN=$(python3 -c "import json;print(json.load(open('/etc/salha-ai.json'))['token'])" 2>/dev/null || true)
+  if [ -n "$IP6" ] && [ -n "$TOKEN" ]; then
+    echo
+    echo "أو من خارج البيت (إذا كان المنفذ $PORT مفتوحاً في الـ FRITZ!Box):"
+    echo
+    echo "     http://[$IP6]:$PORT/setup?t=$TOKEN"
+    echo
+    echo "(هذا الرابط فيه رمزك الخاص — لا ترسله لأحد)"
+  fi
 else
   echo "❌ الخدمة لا تعمل:"
   journalctl -u salha-ai -n 20 --no-pager

@@ -190,7 +190,7 @@ code{display:block;direction:ltr;text-align:left;background:#00000010;padding:12
 {msg}
 <div class="card"><h2>① مفتاح Gemini</h2>
 <div class="muted">الحالة: {keystate}<br>خذ المفتاح من <b>aistudio.google.com</b> ← Get API key، ثم الصقه هنا.</div>
-<form method="post" action="/setup"><input name="key" type="password" placeholder="AIza…" autocomplete="off" autocapitalize="off" spellcheck="false">
+<form method="post" action="{action}"><input name="key" type="password" placeholder="AIza…" autocomplete="off" autocapitalize="off" spellcheck="false">
 <button type="submit">حفظ واختبار المفتاح</button></form></div>
 <div class="card"><h2>② رمز الدخول للتطبيق</h2>
 <div class="muted">انسخه والصقه في تطبيق Salha AI ← الإعدادات ← رمز الدخول.</div>
@@ -236,6 +236,14 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(data)
 
+    def _setup_allowed(self):
+        """من شبكة البيت دائماً؛ ومن الخارج فقط مع الرمز في الرابط (?t=…)."""
+        if is_local(self.client_address[0]):
+            return True
+        q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+        got = (q.get("t") or [""])[0]
+        return bool(got) and hmac.compare_digest(got, conf()["token"])
+
     def _setup_page(self, msg=""):
         c = conf()
         home, remote = lan_addresses()
@@ -243,7 +251,8 @@ class Handler(BaseHTTPRequestHandler):
                     else '<span class="bad">❌ غير مضبوط بعد</span>')
         page = (SETUP_HTML.replace("{msg}", msg).replace("{keystate}", keystate)
                 .replace("{token}", html.escape(c["token"])).replace("{home}", home)
-                .replace("{remote}", remote).replace("{port}", str(PORT)))
+                .replace("{remote}", remote).replace("{port}", str(PORT))
+                .replace("{action}", html.escape(self.path if self.path.startswith("/setup") else "/setup")))
         data = page.encode()
         self.send_response(200)
         self.send_header("Content-Type", "text/html; charset=utf-8")
@@ -254,8 +263,8 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         if self.path == "/" or self.path.startswith("/setup"):
-            if not is_local(self.client_address[0]):
-                return self._json(403, {"error": "صفحة الإعداد من شبكة البيت فقط"})
+            if not self._setup_allowed():
+                return self._json(403, {"error": "صفحة الإعداد: من شبكة البيت، أو من الخارج بالرابط الكامل مع الرمز"})
             return self._setup_page()
         if self.path.startswith("/api/version"):
             return self._json(200, {"version": "salha-ai-gemini"})
@@ -267,8 +276,8 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         if self.path.startswith("/setup"):
-            if not is_local(self.client_address[0]):
-                return self._json(403, {"error": "صفحة الإعداد من شبكة البيت فقط"})
+            if not self._setup_allowed():
+                return self._json(403, {"error": "صفحة الإعداد: من شبكة البيت، أو من الخارج بالرابط الكامل مع الرمز"})
             n = int(self.headers.get("Content-Length") or 0)
             form = urllib.parse.parse_qs(self.rfile.read(min(n, 4096)).decode("utf-8", "replace"))
             raw = (form.get("key") or [""])[0]
