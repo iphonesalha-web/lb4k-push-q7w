@@ -177,6 +177,8 @@ KNOWN = {  # وصف ما بناه نزار على الـ Pi — حتى لا يخ
     "ssh": "SSH — الدخول عن بعد",
     "aachen": "أخبار آخن على تيليجرام",
     "ollama": "Ollama (يُفترض أنه حُذف)",
+    "termin": "مراقب مواعيد Ausländeramt آخن (يرسل تنبيه تيليجرام عند وجود موعد)",
+    "pdf-sync": "مزامنة ملفات PDF إلى الهارد",
 }
 SYSTEM_UNITS = re.compile(r"^(systemd-|dbus|getty|user@|polkit|cron|rsyslog|ModemManager|NetworkManager|wpa_|avahi|bluetooth|"
                           r"udisks|triggerhappy|rtkit|colord|cups|accounts|lightdm|serial-getty|containerd|rng|hciuart|"
@@ -259,7 +261,8 @@ def build_system(user_system, last_question, search=True):
         "المستخدم نزار، يسكن في Alsdorf قرب آخن، ويملك محل SALHA AUTOTEILE لقطع غيار BMW.",
         ("عندك أداة بحث Google — استعملها للأسئلة عن الأحداث والمعلومات الحديثة، ولا تخترع معلومات." if search
          else "ليس عندك بحث في الإنترنت: إذا لم تكن متأكداً من معلومة حديثة فقل ذلك بصراحة ولا تخترع."),
-        "أجب بالعربية دائماً إلا إذا كتب المستخدم بلغة أخرى.",
+        "أجب بالعربية دائماً إلا إذا كتب المستخدم بلغة أخرى. اكتب بعربية سليمة فقط، بلا كلمات صينية أو بولندية "
+        "أو كلمات إنجليزية مخلوطة، وانقل أسماء البرامج كما هي بالضبط.",
         "إذا سُئلت عن الـ Raspberry Pi (Raspberry Pi 5 بذاكرة 8GB) أو حرارته أو برامجه فاعتمد فقط على هذه الحالة الحقيقية الآن، "
         "ولا تخترع برامج أو أوصافاً غير موجودة فيها، ولا تنصح بأوامر الطرفية إلا إذا طُلب:\n" + pi_status(),
     ]
