@@ -23,10 +23,23 @@ def model_key(name):
     return (-nums[0], -nums[1], kind, name)
 
 
-def available_models(key):
-    """النماذج المتاحة لمفتاحك فعلاً (تُحدَّث كل 12 ساعة)."""
+def available_models(key, prefer="conf"):
+    """النماذج المتاحة لمفتاحك فعلاً (تُحدَّث كل 12 ساعة)، والنموذج الذي نجح أولاً."""
+    names = _list_models(key)
+    if prefer == "conf":
+        try:
+            with open(CONF) as f:
+                good = json.load(f).get("model")
+        except (OSError, ValueError):
+            good = None
+        if good and good in names:
+            names = [good] + [n for n in names if n != good]
+    return names
+
+
+def _list_models(key):
     if key and time.time() - _models["at"] < 12 * 3600 and _models["list"]:
-        return _models["list"]
+        return list(_models["list"])
     names = []
     if key:
         try:
@@ -46,7 +59,7 @@ def available_models(key):
     if not names:
         names = [DEFAULT_MODEL]
     _models.update(at=time.time() if len(names) > 1 or key else 0, list=names)
-    return names
+    return list(names)
 
 
 MODELS = [DEFAULT_MODEL]  # للتوافق — الاستعمال الفعلي عبر available_models()
@@ -95,24 +108,35 @@ def is_local(addr):
         return False
 
 
-def test_key(key):
-    """يرجع (True, رد) إن كان المفتاح يعمل، أو (False, سبب)."""
-    _models["at"] = 0  # مفتاح جديد = قائمة جديدة
-    model = available_models(key)[0]
+def _try_model(key, model):
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
     body = {"contents": [{"role": "user", "parts": [{"text": "قل: أهلاً نزار"}]}]}
     req = urllib.request.Request(url, data=json.dumps(body).encode(),
                                  headers={"Content-Type": "application/json", "x-goog-api-key": key})
-    try:
-        with urllib.request.urlopen(req, timeout=30) as r:
-            obj = json.loads(r.read())
-        txt = "".join(p.get("text", "") for c in obj.get("candidates", [])
-                      for p in (c.get("content") or {}).get("parts", []))
-        return True, txt.strip() or "✓"
-    except urllib.error.HTTPError as e:
-        return False, api_error(e)
-    except Exception as e:
-        return False, f"لا يوجد اتصال بـ Google: {e}"
+    with urllib.request.urlopen(req, timeout=30) as r:
+        obj = json.loads(r.read())
+    txt = "".join(p.get("text", "") for c in obj.get("candidates", [])
+                  for p in (c.get("content") or {}).get("parts", []))
+    return txt.strip() or "✓"
+
+
+def test_key(key):
+    """يجرّب النماذج المتاحة بالترتيب ويرجع (True, رد, النموذج) لأول نموذج يعمل مجاناً."""
+    _models["at"] = 0  # مفتاح جديد = قائمة جديدة
+    errors = []
+    for model in available_models(key, prefer=None):
+        try:
+            return True, _try_model(key, model), model
+        except urllib.error.HTTPError as e:
+            info = api_error(e)
+            if e.code in (400, 403) and "API key" in info:
+                return False, info, None      # المفتاح نفسه مرفوض — لا داعي لتجربة غيره
+            errors.append(f"{model}: {info}")
+            if e.code not in (404, 429, 400, 403):
+                break
+        except Exception as e:
+            return False, f"لا يوجد اتصال بـ Google: {e}", None
+    return False, " | ".join(errors[:4]) or "لا توجد نماذج متاحة", None
 
 
 # ---------- السياق الإضافي ----------
@@ -205,7 +229,7 @@ def api_error(e):
     except Exception:
         msg = ""
     if e.code == 429:
-        return "تم تجاوز الحد المجاني لـ Gemini مؤقتاً — جرّب بعد قليل أو اختر نموذجاً آخر من الأعلى."
+        return f"الحد المجاني لهذا النموذج انتهى أو غير متاح (429): {msg[:160]}"
     if e.code in (400, 403) and "API key" in msg:
         return f"Google رفض المفتاح (HTTP {e.code}): {msg[:200]}"
     return f"خطأ من Gemini (HTTP {e.code}) {msg[:200]}"
@@ -233,7 +257,9 @@ code{display:block;direction:ltr;text-align:left;background:#00000010;padding:12
 <button type="submit">حفظ واختبار المفتاح</button></form></div>
 <div class="card"><h2>② رمز الدخول للتطبيق</h2>
 <div class="muted">انسخه والصقه في تطبيق Salha AI ← الإعدادات ← رمز الدخول.</div>
-<code id="t">{token}</code><button type="button" onclick="navigator.clipboard.writeText(document.getElementById('t').innerText);this.innerText='✅ تم النسخ'">نسخ الرمز</button></div>
+<code id="t">{token}</code><button type="button" onclick="navigator.clipboard.writeText(document.getElementById('t').innerText);this.innerText='✅ تم النسخ'">نسخ الرمز</button>
+<form method="post" action="{action}"><input type="hidden" name="action" value="newtoken">
+<button type="submit" style="background:#6b7280">🔄 إنشاء رمز جديد</button></form></div>
 <div class="card"><h2>③ عناوين التطبيق</h2><div class="muted">في البيت:</div><code>{home}</code>
 <div class="muted" style="margin-top:10px">من خارج البيت (يحتاج فتح المنفذ {port} في الـ FRITZ!Box):</div><code>{remote}</code></div>
 </body></html>"""
@@ -320,6 +346,12 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(403, {"error": "صفحة الإعداد: من شبكة البيت، أو من الخارج بالرابط الكامل مع الرمز"})
             n = int(self.headers.get("Content-Length") or 0)
             form = urllib.parse.parse_qs(self.rfile.read(min(n, 4096)).decode("utf-8", "replace"))
+            if (form.get("action") or [""])[0] == "newtoken":
+                c = conf()
+                c["token"] = secrets.token_urlsafe(18)
+                save_conf(c)
+                self.path = "/setup" if is_local(self.client_address[0]) else f"/setup?t={c['token']}"
+                return self._setup_page('<div class="card ok">✅ رمز دخول جديد — انسخه للتطبيق (الرمز القديم لم يعد يعمل)</div>')
             raw = (form.get("key") or [""])[0]
             raw = re.sub(r"\x1b\[[0-9;]*[~A-Za-z]|\[20[01]~", "", raw)  # رموز لصق من بعض التطبيقات
             m = re.search(r"AIza[0-9A-Za-z_-]{35}", raw)
@@ -327,15 +359,16 @@ class Handler(BaseHTTPRequestHandler):
             key = m.group(0) if m else re.sub(r"\s+", "", raw)
             if len(key) < 20:
                 return self._setup_page('<div class="card bad">❌ المفتاح غير كامل — انسخه مرة ثانية</div>')
-            ok, info = test_key(key)
+            ok, info, good_model = test_key(key)
             if not ok:
                 hint = (f"<br><span class='muted'>المفتاح الذي وصل: يبدأ بـ «{html.escape(key[:6])}…» "
                         f"وينتهي بـ «…{html.escape(key[-4:])}»، طوله {len(key)} حرفاً.</span>")
                 return self._setup_page(f'<div class="card bad">❌ {html.escape(info)}{hint}</div>')
             c = conf()
             c["key"] = key
+            c["model"] = good_model
             save_conf(c)
-            return self._setup_page(f'<div class="card ok">✅ تم حفظ المفتاح — رد Gemini: «{html.escape(info[:120])}»</div>')
+            return self._setup_page(f'<div class="card ok">✅ تم حفظ المفتاح — النموذج {html.escape(good_model)} ردّ: «{html.escape(info[:120])}»</div>')
         if not self.path.startswith("/api/chat"):
             return self._json(404, {"error": "not found"})
         c = self._authed()
@@ -369,16 +402,30 @@ class Handler(BaseHTTPRequestHandler):
 
         try:
             got = False
-            for search in (True, False):  # إن فشل البحث (حصة) نعيد بدونه
-                try:
-                    for t in gemini_stream(c["key"], model, system, chat, search=search):
-                        got = True
-                        chunk({"model": model, "message": {"role": "assistant", "content": t}, "done": False})
+            order = [model] + [m for m in models if m != model]
+            last = None
+            for mdl in order[:4]:
+                last = None
+                for search in (True, False):  # إن فشل البحث (حصة) نعيد بدونه
+                    try:
+                        for t in gemini_stream(c["key"], mdl, system, chat, search=search):
+                            got = True
+                            chunk({"model": mdl, "message": {"role": "assistant", "content": t}, "done": False})
+                        break
+                    except urllib.error.HTTPError as e:
+                        last = e
+                        if got:
+                            raise
+                        if search and e.code in (400, 429):
+                            continue
+                        break
+                if got or last is None:
+                    model = mdl
                     break
-                except urllib.error.HTTPError as e:
-                    if search and not got and e.code in (400, 429):
-                        continue
-                    raise
+                if last.code not in (404, 429):
+                    raise last
+            if not got and last is not None:
+                raise last
             chunk({"model": model, "message": {"role": "assistant", "content": ""}, "done": True})
         except urllib.error.HTTPError as e:
             chunk({"error": api_error(e)})
