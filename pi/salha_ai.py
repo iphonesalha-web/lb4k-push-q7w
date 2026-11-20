@@ -12,7 +12,44 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 CONF = "/etc/salha-ai.json"
 PORT = 8095
-MODELS = ["gemini-2.5-flash", "gemini-2.5-flash-lite", "gemini-2.5-pro"]
+DEFAULT_MODEL = "gemini-3.8-flash"   # Google يغيّر أسماء النماذج — القائمة الحقيقية تُقرأ من حسابك
+_models = {"at": 0, "list": []}
+
+
+def model_key(name):
+    """ترتيب: الأحدث أولاً، و flash قبل pro قبل lite."""
+    nums = [int(x) for x in re.findall(r"\d+", name)[:2]] + [0, 0]
+    kind = 0 if name.endswith("-flash") else (1 if "pro" in name else 2)
+    return (-nums[0], -nums[1], kind, name)
+
+
+def available_models(key):
+    """النماذج المتاحة لمفتاحك فعلاً (تُحدَّث كل 12 ساعة)."""
+    if key and time.time() - _models["at"] < 12 * 3600 and _models["list"]:
+        return _models["list"]
+    names = []
+    if key:
+        try:
+            req = urllib.request.Request("https://generativelanguage.googleapis.com/v1beta/models?pageSize=200",
+                                         headers={"x-goog-api-key": key})
+            with urllib.request.urlopen(req, timeout=15) as r:
+                data = json.loads(r.read())
+            for m in data.get("models", []):
+                n = m.get("name", "").removeprefix("models/")
+                if ("generateContent" in m.get("supportedGenerationMethods", [])
+                        and n.startswith("gemini-")
+                        and not re.search(r"embed|tts|image|live|audio|vision|exp|preview|latest|\d{3,}", n)):
+                    names.append(n)
+        except Exception as e:
+            print("models list failed:", e, file=sys.stderr, flush=True)
+    names = sorted(set(names), key=model_key)[:6]
+    if not names:
+        names = [DEFAULT_MODEL]
+    _models.update(at=time.time() if len(names) > 1 or key else 0, list=names)
+    return names
+
+
+MODELS = [DEFAULT_MODEL]  # للتوافق — الاستعمال الفعلي عبر available_models()
 NEWS_URL = "https://raw.githubusercontent.com/iphonesalha-web/aachen-news-ios/main/data/news.json"
 API = "https://generativelanguage.googleapis.com/v1beta/models/{model}:streamGenerateContent?alt=sse"
 
@@ -60,7 +97,9 @@ def is_local(addr):
 
 def test_key(key):
     """يرجع (True, رد) إن كان المفتاح يعمل، أو (False, سبب)."""
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/{MODELS[0]}:generateContent"
+    _models["at"] = 0  # مفتاح جديد = قائمة جديدة
+    model = available_models(key)[0]
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
     body = {"contents": [{"role": "user", "parts": [{"text": "قل: أهلاً نزار"}]}]}
     req = urllib.request.Request(url, data=json.dumps(body).encode(),
                                  headers={"Content-Type": "application/json", "x-goog-api-key": key})
@@ -166,7 +205,7 @@ def api_error(e):
     except Exception:
         msg = ""
     if e.code == 429:
-        return "تم تجاوز الحد المجاني لـ Gemini مؤقتاً — جرّب بعد قليل أو اختر gemini-2.5-flash-lite."
+        return "تم تجاوز الحد المجاني لـ Gemini مؤقتاً — جرّب بعد قليل أو اختر نموذجاً آخر من الأعلى."
     if e.code in (400, 403) and "API key" in msg:
         return f"Google رفض المفتاح (HTTP {e.code}): {msg[:200]}"
     return f"خطأ من Gemini (HTTP {e.code}) {msg[:200]}"
@@ -271,7 +310,8 @@ class Handler(BaseHTTPRequestHandler):
         if self.path.startswith("/api/tags"):
             if not self._authed():
                 return
-            return self._json(200, {"models": [{"name": m} for m in MODELS]})
+            c = conf()
+            return self._json(200, {"models": [{"name": m} for m in available_models(c.get("key"))]})
         self._json(404, {"error": "not found"})
 
     def do_POST(self):
@@ -310,7 +350,8 @@ class Handler(BaseHTTPRequestHandler):
         user_system = "\n".join(m.get("content", "") for m in msgs if m.get("role") == "system")
         chat = [m for m in msgs if m.get("role") in ("user", "assistant")]
         last_q = next((m.get("content", "") for m in reversed(chat) if m.get("role") == "user"), "")
-        model = req.get("model") if req.get("model") in MODELS else MODELS[0]
+        models = available_models(c.get("key"))
+        model = req.get("model") if req.get("model") in models else models[0]
         if not c.get("key"):
             return self._json(503, {"error": "مفتاح Gemini غير مضبوط — افتح صفحة الإعداد على الـ Pi"})
         system = build_system(user_system, last_q)
@@ -373,7 +414,7 @@ def main():
             return
         q = "ما عاصمة ولاية شمال الراين-وستفاليا؟ أجب بكلمة."
         print("سؤال:", q)
-        print("رد:", "".join(gemini_stream(c["key"], MODELS[0], build_system("", q),
+        print("رد:", "".join(gemini_stream(c["key"], available_models(c["key"])[0], build_system("", q),
                                          [{"role": "user", "content": q}], search=False)))
         return
     conf()  # يولّد رمز الدخول عند أول تشغيل
