@@ -4,6 +4,7 @@
 # - المفتاح محفوظ على الـ Pi فقط (/etc/salha-ai.json) — لا يخرج إلى الهاتف.
 # - يضيف لكل محادثة: الوقت الآن، حالة الـ Pi، وعند السؤال عن الأخبار: آخر أخبار آخن.
 # - Gemini يبحث في Google بنفسه عن المعلومات الحديثة.
+# - OpenRouter (DeepSeek :free) يُستعمل أولاً إن وُضع مفتاحه، وGemini احتياط.
 # - كل طلب يحتاج رمز الدخول (Bearer) لأن المنفذ قد يكون مفتوحاً للإنترنت.
 # - صفحة الإعداد /setup (من شبكة البيت فقط): تلصق فيها مفتاح Gemini من Safari
 #   وتنسخ منها رمز الدخول للتطبيق — بدون لصق أي شيء في الطرفية.
@@ -197,13 +198,15 @@ def news_text():
 NEWS_WORDS = re.compile(r"خبر|أخبار|اخبار|news|nachricht|heute|اليوم|حصل|صار|حوادث|شرطة|polizei", re.I)
 
 
-def build_system(user_system, last_question):
+def build_system(user_system, last_question, search=True):
     now = time.strftime("%A %d.%m.%Y %H:%M")
     parts = [
         user_system or "أنت مساعد مفيد.",
         f"التاريخ والوقت الآن عند المستخدم (ألمانيا): {now}.",
         "المستخدم نزار، يسكن في Alsdorf قرب آخن، ويملك محل SALHA AUTOTEILE لقطع غيار BMW.",
-        "عندك أداة بحث Google — استعملها للأسئلة عن الأحداث والمعلومات الحديثة، ولا تخترع معلومات.",
+        ("عندك أداة بحث Google — استعملها للأسئلة عن الأحداث والمعلومات الحديثة، ولا تخترع معلومات." if search
+         else "ليس عندك بحث في الإنترنت: إذا لم تكن متأكداً من معلومة حديثة فقل ذلك بصراحة ولا تخترع."),
+        "أجب بالعربية دائماً إلا إذا كتب المستخدم بلغة أخرى.",
         "إذا سُئلت عن الـ Raspberry Pi أو حرارته أو خدماته فاعتمد على هذه الحالة الحقيقية الآن:\n" + pi_status(),
     ]
     if NEWS_WORDS.search(last_question or ""):
@@ -244,6 +247,109 @@ def gemini_stream(key, model, system, messages, search=True):
                         yield p["text"]
 
 
+# ---------- OpenRouter (DeepSeek المجاني) ----------
+
+OR_BASE = "https://openrouter.ai/api/v1"
+OR_DEFAULT = "deepseek/deepseek-chat:free"
+_or_models = {"at": 0, "list": []}
+
+
+def _or_rank(mid):
+    small = bool(re.search(r"\b\d{1,2}b\b|distill|mini|nano|tiny", mid))
+    return (0 if "deepseek" in mid else 1, 1 if small else 0, 1 if "r1" in mid else 0, mid)
+
+
+def or_models(prefer=None):
+    """النماذج المجانية (:free) على OpenRouter — DeepSeek أولاً، ثم غيرها كاحتياط."""
+    if not (time.time() - _or_models["at"] < 6 * 3600 and _or_models["list"]):
+        ids = []
+        try:
+            with urllib.request.urlopen(OR_BASE + "/models", timeout=15) as r:
+                data = json.loads(r.read())
+            for m in data.get("data", []):
+                mid = m.get("id", "")
+                if mid.endswith(":free") and "text" in str((m.get("architecture") or {}).get("output_modalities", ["text"])):
+                    ids.append(mid)
+        except Exception as e:
+            print("openrouter models failed:", e, file=sys.stderr, flush=True)
+        ids = sorted(set(ids), key=_or_rank)[:8] or [OR_DEFAULT]
+        _or_models.update(at=time.time() if len(ids) > 1 else 0, list=ids)
+    names = list(_or_models["list"])
+    if prefer and prefer in names:
+        names = [prefer] + [n for n in names if n != prefer]
+    return names
+
+
+def _or_req(key, body, timeout):
+    return urllib.request.urlopen(urllib.request.Request(
+        OR_BASE + "/chat/completions", data=json.dumps(body).encode(),
+        headers={"Content-Type": "application/json", "Authorization": "Bearer " + key,
+                 "HTTP-Referer": "https://github.com/iphonesalha-web", "X-Title": "Salha AI"}), timeout=timeout)
+
+
+def or_stream(key, model, system, messages):
+    msgs = [{"role": "system", "content": system}] + [
+        {"role": m["role"], "content": m.get("content") or ""} for m in messages if m.get("content")]
+    with _or_req(key, {"model": model, "messages": msgs, "stream": True}, 180) as r:
+        for raw in r:
+            line = raw.decode("utf-8", "replace").strip()
+            if not line.startswith("data:") or line == "data: [DONE]":
+                continue
+            try:
+                obj = json.loads(line[5:].strip())
+            except ValueError:
+                continue
+            if obj.get("error"):
+                raise RuntimeError("OpenRouter: " + str(obj["error"].get("message", obj["error"]))[:200])
+            for ch in obj.get("choices", []):
+                t = (ch.get("delta") or {}).get("content")
+                if t:
+                    yield t
+
+
+def or_error(e):
+    try:
+        msg = json.loads(e.read()).get("error", {}).get("message", "")
+    except Exception:
+        msg = ""
+    if e.code == 401:
+        return "OpenRouter رفض المفتاح (401) — انسخه مرة ثانية"
+    if e.code == 429:
+        return f"حد OpenRouter المجاني (429): {msg[:160]}"
+    return f"خطأ من OpenRouter (HTTP {e.code}) {msg[:200]}"
+
+
+def test_or_key(key):
+    try:
+        with urllib.request.urlopen(urllib.request.Request(
+                OR_BASE + "/key", headers={"Authorization": "Bearer " + key}), timeout=20) as r:
+            r.read()
+    except urllib.error.HTTPError as e:
+        return False, or_error(e), None
+    except Exception as e:
+        return False, f"لا يوجد اتصال بـ OpenRouter: {e}", None
+    _or_models["at"] = 0
+    errors = []
+    for model in or_models()[:5]:
+        try:
+            with _or_req(key, {"model": model, "max_tokens": 40,
+                               "messages": [{"role": "user", "content": "قل: أهلاً نزار"}]}, 60) as r:
+                obj = json.loads(r.read())
+            if obj.get("error"):
+                errors.append(f"{model}: {str(obj['error'].get('message'))[:120]}")
+                continue
+            txt = "".join((c.get("message") or {}).get("content") or "" for c in obj.get("choices", []))
+            return True, txt.strip() or "✓", model
+        except urllib.error.HTTPError as e:
+            if e.code == 401:
+                return False, or_error(e), None
+            errors.append(f"{model}: {or_error(e)}")
+        except Exception as e:
+            errors.append(f"{model}: {e}")
+    # المفتاح صحيح لكن كل النماذج مشغولة الآن — نحفظه ونجرب وقت المحادثة
+    return "busy", " | ".join(errors[:4]), or_models()[0]
+
+
 def api_error(e):
     try:
         msg = json.loads(e.read()).get("error", {}).get("message", "")
@@ -276,6 +382,10 @@ code{display:block;direction:ltr;text-align:left;background:#00000010;padding:12
 <div class="muted">الحالة: {keystate}<br>خذ المفتاح من <b>aistudio.google.com</b> ← Get API key، ثم الصقه هنا.</div>
 <form method="post" action="{action}"><input name="key" type="password" placeholder="AIza…" autocomplete="off" autocapitalize="off" spellcheck="false">
 <button type="submit">حفظ واختبار المفتاح</button></form></div>
+<div class="card"><h2>①ب مفتاح OpenRouter — DeepSeek مجاني</h2>
+<div class="muted">الحالة: {orstate}<br>افتح <b>openrouter.ai</b> ← سجّل دخول ← <b>Keys</b> ← <b>Create Key</b>، ثم الصقه هنا (يبدأ بـ sk-or-). يُستعمل أولاً، وGemini احتياط.</div>
+<form method="post" action="{action}"><input type="hidden" name="action" value="orkey"><input name="key" type="password" placeholder="sk-or-…" autocomplete="off" autocapitalize="off" spellcheck="false">
+<button type="submit">حفظ واختبار مفتاح OpenRouter</button></form></div>
 <div class="card"><h2>② رمز الدخول للتطبيق</h2>
 <div class="muted">انسخه والصقه في تطبيق Salha AI ← الإعدادات ← رمز الدخول.</div>
 <code id="t">{token}</code><button type="button" onclick="navigator.clipboard.writeText(document.getElementById('t').innerText);this.innerText='✅ تم النسخ'">نسخ الرمز</button>
@@ -335,7 +445,9 @@ class Handler(BaseHTTPRequestHandler):
         home, remote = lan_addresses()
         keystate = ('<span class="ok">✅ مضبوط</span>' if c.get("key")
                     else '<span class="bad">❌ غير مضبوط بعد</span>')
-        page = (SETUP_HTML.replace("{msg}", msg).replace("{keystate}", keystate)
+        orstate = (f'<span class="ok">✅ مضبوط — {html.escape(c.get("or_model") or "")}</span>' if c.get("or_key")
+                   else '<span class="bad">❌ غير مضبوط بعد</span>')
+        page = (SETUP_HTML.replace("{msg}", msg).replace("{keystate}", keystate).replace("{orstate}", orstate)
                 .replace("{token}", html.escape(c["token"])).replace("{home}", home)
                 .replace("{remote}", remote).replace("{port}", str(PORT))
                 .replace("{action}", html.escape(self.path if self.path.startswith("/setup") else "/setup")))
@@ -358,7 +470,9 @@ class Handler(BaseHTTPRequestHandler):
             if not self._authed():
                 return
             c = conf()
-            return self._json(200, {"models": [{"name": m} for m in available_models(c.get("key"))]})
+            names = (or_models(c.get("or_model"))[:5] if c.get("or_key") else []) + \
+                    (available_models(c.get("key"))[:5] if c.get("key") else [])
+            return self._json(200, {"models": [{"name": m} for m in names or [DEFAULT_MODEL]]})
         self._json(404, {"error": "not found"})
 
     def do_POST(self):
@@ -375,6 +489,20 @@ class Handler(BaseHTTPRequestHandler):
                 return self._setup_page('<div class="card ok">✅ رمز دخول جديد — انسخه للتطبيق (الرمز القديم لم يعد يعمل)</div>')
             raw = (form.get("key") or [""])[0]
             raw = re.sub(r"\x1b\[[0-9;]*[~A-Za-z]|\[20[01]~", "", raw)  # رموز لصق من بعض التطبيقات
+            if (form.get("action") or [""])[0] == "orkey":
+                m = re.search(r"sk-or-[0-9A-Za-z_-]{20,}", raw)
+                key = m.group(0) if m else re.sub(r"\s+", "", raw)
+                if len(key) < 20:
+                    return self._setup_page('<div class="card bad">❌ المفتاح غير كامل — انسخه مرة ثانية</div>')
+                ok, info, model = test_or_key(key)
+                if not ok:
+                    return self._setup_page(f'<div class="card bad">❌ {html.escape(info)}</div>')
+                c = conf()
+                c["or_key"], c["or_model"] = key, model
+                save_conf(c)
+                note = (f"ردّ: «{html.escape(info[:120])}»" if ok is True
+                        else f"المفتاح صحيح، النماذج مشغولة الآن — جرّب المحادثة بعد قليل.<br><span class='muted'>{html.escape(info[:300])}</span>")
+                return self._setup_page(f'<div class="card ok">✅ تم حفظ مفتاح OpenRouter — {html.escape(model)} {note}</div>')
             m = re.search(r"AIza[0-9A-Za-z_-]{35}", raw)
             # شكل غير معروف؟ نحذف المسافات والأسطر فقط ولا نلمس باقي الرموز
             key = m.group(0) if m else re.sub(r"\s+", "", raw)
@@ -412,11 +540,17 @@ class Handler(BaseHTTPRequestHandler):
         user_system = "\n".join(m.get("content", "") for m in msgs if m.get("role") == "system")
         chat = [m for m in msgs if m.get("role") in ("user", "assistant")]
         last_q = next((m.get("content", "") for m in reversed(chat) if m.get("role") == "user"), "")
-        models = available_models(c.get("key"))
-        model = req.get("model") if req.get("model") in models else models[0]
-        if not c.get("key"):
-            return self._json(503, {"error": "مفتاح Gemini غير مضبوط — افتح صفحة الإعداد على الـ Pi"})
-        system = build_system(user_system, last_q)
+        if not c.get("key") and not c.get("or_key"):
+            return self._json(503, {"error": "لا يوجد مفتاح — افتح صفحة الإعداد على الـ Pi"})
+        # المرشحون بالترتيب: OpenRouter (DeepSeek) أولاً إن وُجد، ثم Gemini
+        cands = []
+        if c.get("or_key"):
+            cands += [("or", m) for m in or_models(c.get("or_model"))[:5]]
+        if c.get("key"):
+            cands += [("gm", m) for m in available_models(c.get("key"))[:5]]
+        want = req.get("model")
+        if not c.get("or_key") or "/" in str(want):   # اختيار التطبيق يُحترم ضمن نفس المزوّد الأول
+            cands.sort(key=lambda x: 0 if x[1] == want else 1)
 
         self.send_response(200)
         self.send_header("Content-Type", "application/x-ndjson; charset=utf-8")
@@ -429,38 +563,44 @@ class Handler(BaseHTTPRequestHandler):
             self.wfile.write(b"%X\r\n%s\r\n" % (len(data), data))
             self.wfile.flush()
 
+        def attempts(prov, mdl):
+            if prov == "or":
+                yield lambda: or_stream(c["or_key"], mdl, build_system(user_system, last_q, search=False), chat)
+            else:
+                for search in (True, False):
+                    yield lambda search=search: gemini_stream(c["key"], mdl, build_system(user_system, last_q, search),
+                                                              chat, search=search)
+
+        got, errors, used = False, [], None
         try:
-            got = False
-            order = [model] + [m for m in models if m != model]
-            last = None
-            for mdl in order:
-                last = None
-                for search in (True, False):  # إن فشل البحث (حصة) نعيد بدونه
+            for prov, mdl in cands:
+                for run in attempts(prov, mdl):
                     try:
-                        for t in gemini_stream(c["key"], mdl, system, chat, search=search):
+                        for t in run():
                             got = True
                             chunk({"model": mdl, "message": {"role": "assistant", "content": t}, "done": False})
+                        used = (prov, mdl)
                         break
                     except urllib.error.HTTPError as e:
-                        last = e
                         if got:
                             raise
-                        if search and e.code in (400, 429):
-                            continue
-                        if e.code >= 500 and search:   # مزدحم: محاولة ثانية بعد لحظة
-                            time.sleep(1.5)
-                            continue
-                        break
-                if got or last is None:
-                    model = mdl
+                        errors.append(f"{mdl}: " + (or_error(e) if prov == "or" else api_error(e)))
+                        if prov == "or" and e.code == 401:
+                            break
+                    except (BrokenPipeError, ConnectionResetError):
+                        raise
+                    except Exception as e:
+                        if got:
+                            raise
+                        errors.append(f"{mdl}: {e}")
+                if used:
                     break
-                if last.code not in (404, 429) and last.code < 500:
-                    raise last
-            if not got and last is not None:
-                raise last
-            chunk({"model": model, "message": {"role": "assistant", "content": ""}, "done": True})
-        except urllib.error.HTTPError as e:
-            chunk({"error": api_error(e)})
+            if used:
+                if used[0] == "or" and c.get("or_model") != used[1]:
+                    c2 = conf(); c2["or_model"] = used[1]; save_conf(c2)
+                chunk({"model": used[1], "message": {"role": "assistant", "content": ""}, "done": True})
+            else:
+                chunk({"error": "كل النماذج مشغولة الآن، جرّب بعد دقيقة.\n" + "\n".join(errors[:4])})
         except (BrokenPipeError, ConnectionResetError):
             return
         except Exception as e:
